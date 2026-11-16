@@ -1025,6 +1025,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const perfEl = $("perf");
   let camX = 0, camY = 0, camH = 900, frameNo = 0, last = performance.now(), hudT = 0, perfT = 0, fpsN = 0, prepMs = 0, drawMs = 0;
 
+  const MENU_DIM = 0.4; let dimV = MENU_DIM;
   function frame(now) {
     requestAnimationFrame(frame);
     const playing = state === "play";
@@ -1081,7 +1082,11 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     frameOut[0] = foodHigh; frameOut[3] = ntup;
     frameBlk[0] = camX; frameBlk[1] = camY; frameBlk[2] = hw; frameBlk[3] = hh;
     frameBlk[4] = px; frameBlk[5] = (now / 1000) % 3600; frameBlk[6] = vw / innerWidth; frameBlk[7] = ((rt / 4) % 65536 + 65536) % 65536; // food clock in quarter-steps, smooth (fractions)
-    frameBlk[8] = vw; frameBlk[9] = vh; frameBlk[10] = WR; frameBlk[11] = 0;
+    frameBlk[8] = vw; frameBlk[9] = vh; frameBlk[10] = WR;
+    // start page / game over: the floor is drawn darker, free, instead of a see-through full-screen
+    // layer over the game (that was every pixel painted twice)
+    dimV += ((playing || grabPending ? 0 : MENU_DIM) - dimV) * Math.min(1, dt * 8);
+    frameBlk[11] = grabPending ? 0 : dimV;
     const t1 = performance.now();
     if (!gpuDown) { try { R.draw(frameNo++, playing, !perfEl.classList.contains("off")); } catch (e) { if (R.device && touchDevice) restartGPU(); else throw e; } }
     if (grabPending && !gpuDown) { grabPending = false; grabDeathShot(cv); } // copied right after drawing, while the canvas holds it

@@ -59,7 +59,7 @@ struct RingO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) co
   let span = select(acos(min(cs, 1.)), 3.14159265, kind == 0u || cs <= -1.);
   let a = ca + ((f32(q) + dk.x) * ${(2 / FLOOR_RING_SEG).toFixed(8)} - 1.) * span; let r = select(R.x, R.y, dk.y > .5);
   let w = vec2f(cos(a), sin(a)) * r; let c = (w - F.camHalf.xy) / F.camHalf.zw;
-  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col; return o;
+  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col * (1. - F.resWR.w); return o;
 }
 @fragment fn fsRing(i: RingO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no maths per pixel
 struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col: vec3f };
@@ -80,13 +80,13 @@ struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col
   let c = (P + (k * 2. - 1.) * F.pxTime.x * max(1., F.pxTime.z) - F.camHalf.xy) / F.camHalf.zw; // a square 2 CSS pixels wide
   o.pos = vec4f(c.x, -c.y, 0., 1.);
   let d = length(P); let WR = F.resWR.z;
-  var col = mix(vec3f(${FLOOR_DOT.join(", ")}), vec3f(${FLOOR_DOT_MID.join(", ")}), 1. - smoothstep(WR * .35 - 150., WR * .35, d));
+  var col = vec3f(${FLOOR_DOT.join(", ")});
   col = mix(col, vec3f(${FLOOR_DOT_EDGE.join(", ")}), smoothstep(WR - 1600., WR - 200., d));
   // detail, free (per vertex): each dot its own brightness; a dotted circle every FLOOR_RING_SPAN units
   let h = fract(sin(dot(floor(P), vec2f(12.9898, 78.233))) * 43758.5453);
   let rg = select(1., 1.7, abs(((d + 23.) - ${FLOOR_RING_SPAN}. * floor((d + 23.) / ${FLOOR_RING_SPAN}.)) - 23.) < 23.);
   col *= (.72 + .5 * h) * rg;
-  o.col = mix(FB, col, lineFade());
+  o.col = mix(FB, col, lineFade()) * (1. - F.resWR.w);         // [w]: darker behind the start page
   return o;
 }
 @fragment fn fsHex(i: HexO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no blending, no maths

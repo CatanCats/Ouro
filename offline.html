@@ -192,7 +192,7 @@
   .glass { box-shadow: 0 10px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
   .card { position: relative; background-image: linear-gradient(180deg, rgba(56,189,248,.07), rgba(56,189,248,0) 38%); }
   .card::before { content: ""; position: absolute; left: 22%; right: 22%; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, #38bdf8, #34d399, transparent); }
-  .screen { background: radial-gradient(ellipse at 50% 45%, rgba(7,10,18,.05), rgba(7,10,18,.55) 75%); }
+  /* no full-screen darkening layer here: the game draws its floor darker behind these screens (free) */
   #board h3 { color: #a5b1c9; }
   #board li:nth-child(-n+3) .n { font-weight: 800; }
   #board li:nth-child(1) .n { color: #fbbf24; }
@@ -268,7 +268,6 @@ const FLOOR_RIM_COL = [.62, .17, .25];         // the world's edge: a thin red l
 // Honeycomb DOTS (one at each hex corner, 2 CSS px square): ~17x fewer pixels than lines, so
 // they can be brighter, and their colour tells where you are (free: worked out per dot).
 const FLOOR_DOT = [.21, .25, .37];             // dots: well lighter than the floor
-const FLOOR_DOT_MID = [.42, .35, .13];         // inside the middle zone (35% of the world radius): gold
 const FLOOR_DOT_EDGE = [.52, .14, .18];        // the last 1600 units before the edge: turning red
 const FOOD_GLOW = "1.7";                        // food halo radius, in pellet radii
 const FLOOR_RING_SEG = 128;                    // segments of each ring, spread over the part of the edge in view only
@@ -279,12 +278,12 @@ const FLOOR_HX = (46 * Math.sqrt(3)).toFixed(4), FLOOR_HY = "46.";  // hex latti
    the CPU only picks the clear colour and the hex instance count
    (from the Frame block [camX camY halfW halfH | px ...| .. WR]). */
 function floorPlan(fb, p) {
-  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10];
+  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10], lit = 1 - fb[11]; // [11]: darker behind the start page
   const d = Math.hypot(cx, cy), reach = Math.hypot(hw, hh) + 40;
   p.out = d > WR;                                               // camera centre outside the world: clear to darkness
   p.edge = d + reach > WR - Math.max(2, px * 1.5) && d - reach < WR + 32; // the edge on screen: else no ring draws at all
   const c = p.clear || (p.clear = [0, 0, 0, 1]), src = p.out ? FLOOR_DARK : FLOOR_BASE;
-  for (let i = 0; i < 3; i++) c[i] = src[i];
+  for (let i = 0; i < 3; i++) c[i] = src[i] * lit;
   const fade = 1 - Math.min(1, Math.max(0, (px - 3) / 2));      // zoomed far out: lines fade, then are skipped
   // columns and rows with a margin; the shader derives its own column count, which may
   // differ by one through rounding: the margin keeps the screen covered either way
@@ -345,6 +344,7 @@ function createGL(canvas, E) {
     float a=ca+(float(q+da)*${(2 / FLOOR_RING_SEG).toFixed(8)}-1.)*span, r=dr==1?R.y:R.x;
     vec2 w=vec2(cos(a),sin(a))*r, c=(w-uCamHalf.xy)/uCamHalf.zw;
     gl_Position=vis?vec4(c.x,-c.y,0,1):vec4(2,2,2,1);
+    vCol*=1.-uResWR.w;                                          // darker behind the start page
   }`;
   const RING_FS = `#version 300 es
   precision mediump float;
@@ -370,14 +370,14 @@ function createGL(canvas, E) {
     vec2 c=(P+q*uPxTime.x*max(1.,uPxTime.z)-uCamHalf.xy)/uCamHalf.zw; // a square 2 CSS pixels wide
     gl_Position=vec4(c.x,-c.y,0,1);
     float d=length(P), WR=uResWR.z;
-    vec3 col=mix(vec3(${FLOOR_DOT.join(",")}), vec3(${FLOOR_DOT_MID.join(",")}), 1.-smoothstep(WR*.35-150.,WR*.35,d));
+    vec3 col=vec3(${FLOOR_DOT.join(",")});
     col=mix(col, vec3(${FLOOR_DOT_EDGE.join(",")}), smoothstep(WR-1600.,WR-200.,d));
     // detail, free (per vertex, no extra pixels): each dot its own brightness, and a dotted
     // circle every FLOOR_RING_SPAN units from the middle (how far in you are)
     float h=fract(sin(dot(floor(P),vec2(12.9898,78.233)))*43758.5453);
     float ring=abs(mod(d+23.,${FLOOR_RING_SPAN}.)-23.)<23.?1.7:1.;
     col*=(.72+.5*h)*ring;
-    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade());
+    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade())*(1.-uResWR.w); // [w]: darker behind the start page
   }`;
   const HEX_FS = `#version 300 es
   precision mediump float;
@@ -770,7 +770,7 @@ struct RingO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) co
   let span = select(acos(min(cs, 1.)), 3.14159265, kind == 0u || cs <= -1.);
   let a = ca + ((f32(q) + dk.x) * ${(2 / FLOOR_RING_SEG).toFixed(8)} - 1.) * span; let r = select(R.x, R.y, dk.y > .5);
   let w = vec2f(cos(a), sin(a)) * r; let c = (w - F.camHalf.xy) / F.camHalf.zw;
-  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col; return o;
+  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col * (1. - F.resWR.w); return o;
 }
 @fragment fn fsRing(i: RingO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no maths per pixel
 struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col: vec3f };
@@ -791,13 +791,13 @@ struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col
   let c = (P + (k * 2. - 1.) * F.pxTime.x * max(1., F.pxTime.z) - F.camHalf.xy) / F.camHalf.zw; // a square 2 CSS pixels wide
   o.pos = vec4f(c.x, -c.y, 0., 1.);
   let d = length(P); let WR = F.resWR.z;
-  var col = mix(vec3f(${FLOOR_DOT.join(", ")}), vec3f(${FLOOR_DOT_MID.join(", ")}), 1. - smoothstep(WR * .35 - 150., WR * .35, d));
+  var col = vec3f(${FLOOR_DOT.join(", ")});
   col = mix(col, vec3f(${FLOOR_DOT_EDGE.join(", ")}), smoothstep(WR - 1600., WR - 200., d));
   // detail, free (per vertex): each dot its own brightness; a dotted circle every FLOOR_RING_SPAN units
   let h = fract(sin(dot(floor(P), vec2f(12.9898, 78.233))) * 43758.5453);
   let rg = select(1., 1.7, abs(((d + 23.) - ${FLOOR_RING_SPAN}. * floor((d + 23.) / ${FLOOR_RING_SPAN}.)) - 23.) < 23.);
   col *= (.72 + .5 * h) * rg;
-  o.col = mix(FB, col, lineFade());
+  o.col = mix(FB, col, lineFade()) * (1. - F.resWR.w);         // [w]: darker behind the start page
   return o;
 }
 @fragment fn fsHex(i: HexO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no blending, no maths
@@ -1598,6 +1598,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const T = { sim: 0, prep: 0, gl: 0, hud: 0, n: 0 };
   let frameNo = 0, last = performance.now(), fpsAcc = 0, perfT = 0, hudT = 0;
 
+  const MENU_DIM = 0.4; let dimV = MENU_DIM;
   function frame(now) {
     requestAnimationFrame(frame);
     const playing = state === "play";
@@ -1620,6 +1621,10 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
 
     const timing = !perfEl.classList.contains("off");
     if (grabPending) W.deathPose(); // the moment of death: this one frame shows your snake where it crashed
+    // start page / game over: the floor is drawn darker (frame block [11]), free, instead of a
+    // see-through full-screen layer over the game (that was every pixel painted twice)
+    dimV += ((playing || grabPending ? 0 : MENU_DIM) - dimV) * Math.min(1, dt * 8);
+    frameBlk[11] = grabPending ? 0 : dimV;
     if (!gpuDown) { try { R.draw(frameNo++, playing, timing); } catch (e) { if (R.device && touchDevice) restartGPU(); else throw e; } }
     if (grabPending && !gpuDown) { grabPending = false; grabDeathShot(cv); } // copied right after drawing, while the canvas holds it
     const t3 = performance.now();

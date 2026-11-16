@@ -11,7 +11,6 @@ const FLOOR_RIM_COL = [.62, .17, .25];         // the world's edge: a thin red l
 // Honeycomb DOTS (one at each hex corner, 2 CSS px square): ~17x fewer pixels than lines, so
 // they can be brighter, and their colour tells where you are (free: worked out per dot).
 const FLOOR_DOT = [.21, .25, .37];             // dots: well lighter than the floor
-const FLOOR_DOT_MID = [.42, .35, .13];         // inside the middle zone (35% of the world radius): gold
 const FLOOR_DOT_EDGE = [.52, .14, .18];        // the last 1600 units before the edge: turning red
 const FOOD_GLOW = "1.7";                        // food halo radius, in pellet radii
 const FLOOR_RING_SEG = 128;                    // segments of each ring, spread over the part of the edge in view only
@@ -22,12 +21,12 @@ const FLOOR_HX = (46 * Math.sqrt(3)).toFixed(4), FLOOR_HY = "46.";  // hex latti
    the CPU only picks the clear colour and the hex instance count
    (from the Frame block [camX camY halfW halfH | px ...| .. WR]). */
 function floorPlan(fb, p) {
-  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10];
+  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10], lit = 1 - fb[11]; // [11]: darker behind the start page
   const d = Math.hypot(cx, cy), reach = Math.hypot(hw, hh) + 40;
   p.out = d > WR;                                               // camera centre outside the world: clear to darkness
   p.edge = d + reach > WR - Math.max(2, px * 1.5) && d - reach < WR + 32; // the edge on screen: else no ring draws at all
   const c = p.clear || (p.clear = [0, 0, 0, 1]), src = p.out ? FLOOR_DARK : FLOOR_BASE;
-  for (let i = 0; i < 3; i++) c[i] = src[i];
+  for (let i = 0; i < 3; i++) c[i] = src[i] * lit;
   const fade = 1 - Math.min(1, Math.max(0, (px - 3) / 2));      // zoomed far out: lines fade, then are skipped
   // columns and rows with a margin; the shader derives its own column count, which may
   // differ by one through rounding: the margin keeps the screen covered either way
@@ -88,6 +87,7 @@ function createGL(canvas, E) {
     float a=ca+(float(q+da)*${(2 / FLOOR_RING_SEG).toFixed(8)}-1.)*span, r=dr==1?R.y:R.x;
     vec2 w=vec2(cos(a),sin(a))*r, c=(w-uCamHalf.xy)/uCamHalf.zw;
     gl_Position=vis?vec4(c.x,-c.y,0,1):vec4(2,2,2,1);
+    vCol*=1.-uResWR.w;                                          // darker behind the start page
   }`;
   const RING_FS = `#version 300 es
   precision mediump float;
@@ -113,14 +113,14 @@ function createGL(canvas, E) {
     vec2 c=(P+q*uPxTime.x*max(1.,uPxTime.z)-uCamHalf.xy)/uCamHalf.zw; // a square 2 CSS pixels wide
     gl_Position=vec4(c.x,-c.y,0,1);
     float d=length(P), WR=uResWR.z;
-    vec3 col=mix(vec3(${FLOOR_DOT.join(",")}), vec3(${FLOOR_DOT_MID.join(",")}), 1.-smoothstep(WR*.35-150.,WR*.35,d));
+    vec3 col=vec3(${FLOOR_DOT.join(",")});
     col=mix(col, vec3(${FLOOR_DOT_EDGE.join(",")}), smoothstep(WR-1600.,WR-200.,d));
     // detail, free (per vertex, no extra pixels): each dot its own brightness, and a dotted
     // circle every FLOOR_RING_SPAN units from the middle (how far in you are)
     float h=fract(sin(dot(floor(P),vec2(12.9898,78.233)))*43758.5453);
     float ring=abs(mod(d+23.,${FLOOR_RING_SPAN}.)-23.)<23.?1.7:1.;
     col*=(.72+.5*h)*ring;
-    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade());
+    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade())*(1.-uResWR.w); // [w]: darker behind the start page
   }`;
   const HEX_FS = `#version 300 es
   precision mediump float;
