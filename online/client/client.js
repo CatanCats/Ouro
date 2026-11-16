@@ -35,7 +35,9 @@ const nearestSkin = (hex) => { // the picker's colour → the closest skin from 
 const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagini", "Zigzag", "Sir Hiss", "Boop", "Cobra Kai",
   "Pythonista", "Rattler", "Sidewinder", "Jormungandr", "Ouroboros", "Danger Noodle", "Spaghetti", "Slithers", "Taipan",
   "Adder", "Asp", "Basilisk", "Garter", "Krait", "Anaconda", "Boa", "Copperhead", "Hognose", "Kingsnake", "Milk Snake",
-  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces"];
+  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces",
+  "Ziggy", "Pretzel", "Hissy Fit", "Captain Coil", "Medusa", "Twister", "Slurp", "Sir Slides-a-lot", "Wyrm", "Sssteve",
+  "Fangs Out", "Noodle Doodle", "Scaley Dan", "Velvet Viper", "Zap"];
 
 (async () => {
   const $ = (id) => document.getElementById(id);
@@ -514,7 +516,9 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   pickSkin(skinSel);
   const nameEl = $("name"); nameEl.value = store.get("serpent.name") ?? "";
   let best = +(store.get("serpent.best.online") ?? 0);
-  const playerName = () => nameEl.value.trim() || "You";
+  // No nickname typed: a random name from the computer snakes' list, picked anew each game
+  let autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+  const playerName = () => nameEl.value.trim() || autoName;
   let state = "menu"; // menu | play | dead
 
   // this run's numbers, for the information sheet
@@ -523,6 +527,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     if (!connected) return;
     Object.assign(run, { t0: performance.now(), peak: 0, rankBest: 0, rankNow: 0, total: 0 }); localShot = null; touching = false;
     store.set("serpent.name", nameEl.value.trim());
+    if (!nameEl.value.trim()) autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     join();
     state = "play"; document.body.classList.add("playing");
     $("menu").classList.add("hidden"); $("over").classList.add("hidden");
@@ -664,7 +669,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     if (!connected || ws.readyState !== 1) { addChat("", "Not connected to the server.", true); return; }
     chatSentAt = now; chatLast = t;
     // text, then the typed name (the server uses it only before you join)
-    const enc = new TextEncoder(), tb = enc.encode(t).slice(0, 480), nb = enc.encode(nameEl.value.trim()).slice(0, 48);
+    const enc = new TextEncoder(), tb = enc.encode(t).slice(0, 480), nb = enc.encode(playerName()).slice(0, 48);
     const m = new Uint8Array(4 + tb.length + nb.length); m[0] = 7; m[1] = tb.length & 255; m[2] = tb.length >> 8; m.set(tb, 3); m[3 + tb.length] = nb.length; m.set(nb, 4 + tb.length);
     sendRaw(m);
     // the server sends every line back to its writer too: no echo means it doesn't know chat (an older server)
@@ -1020,6 +1025,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const perfEl = $("perf");
   let camX = 0, camY = 0, camH = 900, frameNo = 0, last = performance.now(), hudT = 0, perfT = 0, fpsN = 0, prepMs = 0, drawMs = 0;
 
+  const MENU_DIM = 0.4; let dimV = MENU_DIM;
   function frame(now) {
     requestAnimationFrame(frame);
     const playing = state === "play";
@@ -1076,7 +1082,11 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     frameOut[0] = foodHigh; frameOut[3] = ntup;
     frameBlk[0] = camX; frameBlk[1] = camY; frameBlk[2] = hw; frameBlk[3] = hh;
     frameBlk[4] = px; frameBlk[5] = (now / 1000) % 3600; frameBlk[6] = vw / innerWidth; frameBlk[7] = ((rt / 4) % 65536 + 65536) % 65536; // food clock in quarter-steps, smooth (fractions)
-    frameBlk[8] = vw; frameBlk[9] = vh; frameBlk[10] = WR; frameBlk[11] = 0;
+    frameBlk[8] = vw; frameBlk[9] = vh; frameBlk[10] = WR;
+    // start page / game over: the floor is drawn darker, free, instead of a see-through full-screen
+    // layer over the game (that was every pixel painted twice)
+    dimV += ((playing || grabPending ? 0 : MENU_DIM) - dimV) * Math.min(1, dt * 8);
+    frameBlk[11] = grabPending ? 0 : dimV;
     const t1 = performance.now();
     if (!gpuDown) { try { R.draw(frameNo++, playing, !perfEl.classList.contains("off")); } catch (e) { if (R.device && touchDevice) restartGPU(); else throw e; } }
     if (grabPending && !gpuDown) { grabPending = false; grabDeathShot(cv); } // copied right after drawing, while the canvas holds it

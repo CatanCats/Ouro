@@ -248,7 +248,7 @@
   .glass { box-shadow: 0 10px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06); }
   .card { position: relative; background-image: linear-gradient(180deg, rgba(56,189,248,.07), rgba(56,189,248,0) 38%); }
   .card::before { content: ""; position: absolute; left: 22%; right: 22%; top: -1px; height: 1px; background: linear-gradient(90deg, transparent, #38bdf8, #34d399, transparent); }
-  .screen { background: radial-gradient(ellipse at 50% 45%, rgba(7,10,18,.05), rgba(7,10,18,.55) 75%); }
+  /* no full-screen darkening layer here: the game draws its floor darker behind these screens (free) */
   #board h3 { color: #a5b1c9; }
   #board li:nth-child(-n+3) .n { font-weight: 800; }
   #board li:nth-child(1) .n { color: #fbbf24; }
@@ -276,7 +276,7 @@
     <div class="brand"><svg viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="og" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset=".55" stop-color="#38bdf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs><path d="M24 7a17 17 0 1 1-14.7 8.5" fill="none" stroke="url(#og)" stroke-width="7" stroke-linecap="round"/><circle cx="14.2" cy="10.1" r="6.2" fill="#34d399"/><circle cx="16.3" cy="8.6" r="1.7" fill="#070a12"/></svg><div><div class="logo">ouro</div><div class="at">at br8t.com</div></div></div>
 
     <p class="tag">Online · eat, grow, cut them off.</p>
-    <input id="name" maxlength="16" placeholder="Your nickname" autocomplete="off" spellcheck="false">
+    <input id="name" maxlength="16" placeholder="Your nickname (blank: a random one)" autocomplete="off" spellcheck="false">
     <div class="skins" id="skins" role="group" aria-label="Skin"></div>
     <button class="play" id="play">PLAY ONLINE</button>
     <div class="net" id="net">Connecting…</div>
@@ -325,25 +325,28 @@ const FLOOR_RIM_COL = [.62, .17, .25];         // the world's edge: a thin red l
 // Honeycomb DOTS (one at each hex corner, 2 CSS px square): ~17x fewer pixels than lines, so
 // they can be brighter, and their colour tells where you are (free: worked out per dot).
 const FLOOR_DOT = [.21, .25, .37];             // dots: well lighter than the floor
-const FLOOR_DOT_MID = [.42, .35, .13];         // inside the middle zone (35% of the world radius): gold
 const FLOOR_DOT_EDGE = [.52, .14, .18];        // the last 1600 units before the edge: turning red
 const FOOD_GLOW = "1.7";                        // food halo radius, in pellet radii
-const FLOOR_RING_SEG = 512;                    // segments of the rings (the edge stays round)
+const FLOOR_RING_SEG = 128;                    // segments of each ring, spread over the part of the edge in view only
+const FLOOR_RING_SPAN = 1000;                  // landmark: every this many units from the middle, a circle of brighter dots
 const FLOOR_HX = (46 * Math.sqrt(3)).toFixed(4), FLOOR_HY = "46.";  // hex lattice period (world units)
 /* The floor is one colour, so the screen is simply cleared to it (nearly free). The rest
    is worked out by the vertex shaders from the Frame block (nothing extra is uploaded);
    the CPU only picks the clear colour and the hex instance count
    (from the Frame block [camX camY halfW halfH | px ...| .. WR]). */
 function floorPlan(fb, p) {
-  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10];
-  p.out = Math.hypot(cx, cy) > WR;                              // camera centre outside the world: clear to darkness
+  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10], lit = 1 - fb[11]; // [11]: darker behind the start page
+  const d = Math.hypot(cx, cy), reach = Math.hypot(hw, hh) + 40;
+  p.out = d > WR;                                               // camera centre outside the world: clear to darkness
+  p.edge = d + reach > WR - Math.max(2, px * 1.5) && d - reach < WR + 32; // the edge on screen: else no ring draws at all
   const c = p.clear || (p.clear = [0, 0, 0, 1]), src = p.out ? FLOOR_DARK : FLOOR_BASE;
-  for (let i = 0; i < 3; i++) c[i] = src[i];
+  for (let i = 0; i < 3; i++) c[i] = src[i] * lit;
   const fade = 1 - Math.min(1, Math.max(0, (px - 3) / 2));      // zoomed far out: lines fade, then are skipped
   // columns and rows with a margin; the shader derives its own column count, which may
   // differ by one through rounding: the margin keeps the screen covered either way
-  p.hexes = fade > 0 ? (Math.ceil((2 * hw) / (46 * Math.sqrt(3))) + 3) * (Math.ceil((2 * hh) / 46) + 4) * 2 : 0;
-  if (p.hexes > 30000) p.hexes = 0;                             // (only when zoomed out enormously, e.g. after death)
+  // dots: 4 per hex cell (2 lattices x 2 owned corners), 6 vertices each, in ONE plain draw
+  p.hexes = fade > 0 ? (Math.ceil((2 * hw) / (46 * Math.sqrt(3))) + 3) * (Math.ceil((2 * hh) / 46) + 4) * 4 : 0;
+  if (p.hexes > 60000) p.hexes = 0;                             // (only when zoomed out enormously, e.g. after death)
   return p;
 }
 
@@ -391,9 +394,14 @@ function createGL(canvas, E) {
     else if(kind==1){ R=vec2(rOut,rHide); vis=d+reach>rOut && d-reach<rHide; vCol=vec3(${FLOOR_DARK.join(",")}); }
     else if(kind==2){ R=vec2(rIn,rOut); vis=d+reach>rIn && d-reach<rOut; vCol=vec3(${FLOOR_RIM_COL.join(",")}); }
     else { R=vec2(rOut,d+reach+8.); vis=d+reach>rOut; vCol=vec3(${FLOOR_DARK.join(",")}); }
-    float a=float(q+da)*${(2 * Math.PI / FLOOR_RING_SEG).toFixed(8)}, r=dr==1?R.y:R.x;
+    // only the arc in view (kinds 1-3: the ring is thin, or the camera is inside it, so the
+    // arc of its inner radius within reach + its width covers every visible piece); kind 0: whole
+    float ca=atan(uCamHalf.y,uCamHalf.x), re=reach+(R.y-R.x>64.?0.:R.y-R.x)+4., r0=max(R.x,1.);
+    float cs=(d*d+r0*r0-re*re)/(2.*max(d,1.)*r0), span=(kind==0||cs<=-1.)?3.14159265:acos(min(cs,1.));
+    float a=ca+(float(q+da)*${(2 / FLOOR_RING_SEG).toFixed(8)}-1.)*span, r=dr==1?R.y:R.x;
     vec2 w=vec2(cos(a),sin(a))*r, c=(w-uCamHalf.xy)/uCamHalf.zw;
     gl_Position=vis?vec4(c.x,-c.y,0,1):vec4(2,2,2,1);
+    vCol*=1.-uResWR.w;                                          // darker behind the start page
   }`;
   const RING_FS = `#version 300 es
   precision mediump float;
@@ -410,18 +418,23 @@ function createGL(canvas, E) {
     vec2 S=vec2(${FLOOR_HX},${FLOOR_HY});
     int nx=int(ceil(2.*uCamHalf.z/S.x))+3;                      // columns, first column and row: as floorPlan
     ivec2 f0=ivec2(floor((uCamHalf.xy-uCamHalf.zw)/S))-1;
-    int lat=gl_InstanceID&1, cell=gl_InstanceID>>1;
+    int di=gl_VertexID/6, k=gl_VertexID-di*6;                    // one dot per 6 vertices: no instancing (tiny instances run badly)
+    int e=di&1, lat=(di>>1)&1, cell=di>>2;
     vec2 ctr=(vec2(float(cell%nx+f0.x),float(cell/nx+f0.y))+float(lat)*.5)*S;
     if(length(ctr)>uResWR.z){ gl_Position=vec4(2,2,2,1); return; } // outside the world: no dots
-    int e=gl_VertexID/6, k=gl_VertexID-e*6;
-    vec2 q=vec2((k==1||k==4||k==5)?1.:-1., (k==2||k==3||k==5)?1.:-1.);
+    vec2 q=vec2((k==1||k==4||k==5)?1.:-1., (k==2||k==3||k==5)?1.:-1.); // 2 triangles
     vec2 P=ctr+DC[e]*46.;
     vec2 c=(P+q*uPxTime.x*max(1.,uPxTime.z)-uCamHalf.xy)/uCamHalf.zw; // a square 2 CSS pixels wide
     gl_Position=vec4(c.x,-c.y,0,1);
     float d=length(P), WR=uResWR.z;
-    vec3 col=mix(vec3(${FLOOR_DOT.join(",")}), vec3(${FLOOR_DOT_MID.join(",")}), 1.-smoothstep(WR*.35-150.,WR*.35,d));
+    vec3 col=vec3(${FLOOR_DOT.join(",")});
     col=mix(col, vec3(${FLOOR_DOT_EDGE.join(",")}), smoothstep(WR-1600.,WR-200.,d));
-    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade());
+    // detail, free (per vertex, no extra pixels): each dot its own brightness, and a dotted
+    // circle every FLOOR_RING_SPAN units from the middle (how far in you are)
+    float h=fract(sin(dot(floor(P),vec2(12.9898,78.233)))*43758.5453);
+    float ring=abs(mod(d+23.,${FLOOR_RING_SPAN}.)-23.)<23.?1.7:1.;
+    col*=(.72+.5*h)*ring;
+    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade())*(1.-uResWR.w); // [w]: darker behind the start page
   }`;
   const HEX_FS = `#version 300 es
   precision mediump float;
@@ -732,8 +745,8 @@ function createGL(canvas, E) {
       gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
       gl.useProgram(ringP);
       if (plan.out) { gl.uniform1i(firstU, 0); gl.drawArrays(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6); } // inside area
-      if (plan.hexes) { gl.useProgram(hexP); gl.drawArraysInstanced(gl.TRIANGLES, 0, 12, plan.hexes); gl.useProgram(ringP); }
-      gl.uniform1i(firstU, plan.out ? 1 : 2); gl.drawArraysInstanced(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6, 2); // kinds 1+2 or 2+3
+      if (plan.hexes) { gl.useProgram(hexP); gl.drawArrays(gl.TRIANGLES, 0, plan.hexes * 6); gl.useProgram(ringP); }
+      if (plan.edge) { gl.uniform1i(firstU, plan.out ? 1 : 2); gl.drawArraysInstanced(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6, 2); } // kinds 1+2 or 2+3
       gl.enable(gl.BLEND);
       mark(); // food
       if (nFood) { gl.useProgram(foodP); gl.bindVertexArray(foodVao[f]); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nFood); }
@@ -808,31 +821,40 @@ struct RingO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) co
   if (kind == 0u) { R = vec2f(0., rIn); vis = d - reach < rIn; col = FB; }               // 0: inside (camera outside)
   else if (kind == 1u) { R = vec2f(rOut, rHide); vis = d + reach > rOut && d - reach < rHide; } // 1: thin dark ring
   else if (kind == 2u) { R = vec2f(rIn, rOut); vis = d + reach > rIn && d - reach < rOut; col = vec3f(${FLOOR_RIM_COL.join(", ")}); } // 2: edge line
-  let a = (f32(q) + dk.x) * ${(2 * Math.PI / FLOOR_RING_SEG).toFixed(8)}; let r = select(R.x, R.y, dk.y > .5);
+  // only the arc in view (see render-gl.js); kind 0: the whole circle
+  let ca = atan2(F.camHalf.y, F.camHalf.x); let re = reach + select(R.y - R.x, 0., R.y - R.x > 64.) + 4.; let r0 = max(R.x, 1.);
+  let cs = (d * d + r0 * r0 - re * re) / (2. * max(d, 1.) * r0);
+  let span = select(acos(min(cs, 1.)), 3.14159265, kind == 0u || cs <= -1.);
+  let a = ca + ((f32(q) + dk.x) * ${(2 / FLOOR_RING_SEG).toFixed(8)} - 1.) * span; let r = select(R.x, R.y, dk.y > .5);
   let w = vec2f(cos(a), sin(a)) * r; let c = (w - F.camHalf.xy) / F.camHalf.zw;
-  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col; return o;
+  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col * (1. - F.resWR.w); return o;
 }
 @fragment fn fsRing(i: RingO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no maths per pixel
 struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col: vec3f };
-@vertex fn vsHex(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> HexO {
+@vertex fn vsHex(@builtin(vertex_index) vi: u32) -> HexO {
+  let ii = vi / 6u;                                                // one dot per 6 vertices: no instancing (tiny instances run badly)
   // a dot at each hex corner: each hex owns 2 of its 6 (every corner is shared by 3 hexes:
   // its right one and its upper-right one); unit hex: inradius .5
   var dc = array<vec2f, 2>(vec2f(.5774, 0.), vec2f(.2887, .5));
   let S = vec2f(${FLOOR_HX}, ${FLOOR_HY});
   let nx = i32(ceil(2. * F.camHalf.z / S.x)) + 3;               // columns, first column and row: as floorPlan
   let f0 = vec2i(floor((F.camHalf.xy - F.camHalf.zw) / S)) - 1;
-  let cell = i32(ii >> 1u);
-  let ctr = (vec2f(f32(cell % nx + f0.x), f32(cell / nx + f0.y)) + f32(ii & 1u) * .5) * S;
+  let cell = i32(ii >> 2u); let e = ii & 1u;
+  let ctr = (vec2f(f32(cell % nx + f0.x), f32(cell / nx + f0.y)) + f32((ii >> 1u) & 1u) * .5) * S;
   var o: HexO;
   if (length(ctr) > F.resWR.z) { o.pos = vec4f(2., 2., 2., 1.); return o; } // outside the world: no dots
-  let e = vi / 6u; let k = corner(vi % 6u);
+  let k = corner(vi % 6u);                                         // 2 triangles
   let P = ctr + dc[e] * 46.;
   let c = (P + (k * 2. - 1.) * F.pxTime.x * max(1., F.pxTime.z) - F.camHalf.xy) / F.camHalf.zw; // a square 2 CSS pixels wide
   o.pos = vec4f(c.x, -c.y, 0., 1.);
   let d = length(P); let WR = F.resWR.z;
-  var col = mix(vec3f(${FLOOR_DOT.join(", ")}), vec3f(${FLOOR_DOT_MID.join(", ")}), 1. - smoothstep(WR * .35 - 150., WR * .35, d));
+  var col = vec3f(${FLOOR_DOT.join(", ")});
   col = mix(col, vec3f(${FLOOR_DOT_EDGE.join(", ")}), smoothstep(WR - 1600., WR - 200., d));
-  o.col = mix(FB, col, lineFade());
+  // detail, free (per vertex): each dot its own brightness; a dotted circle every FLOOR_RING_SPAN units
+  let h = fract(sin(dot(floor(P), vec2f(12.9898, 78.233))) * 43758.5453);
+  let rg = select(1., 1.7, abs(((d + 23.) - ${FLOOR_RING_SPAN}. * floor((d + 23.) / ${FLOOR_RING_SPAN}.)) - 23.) < 23.);
+  col *= (.72 + .5 * h) * rg;
+  o.col = mix(FB, col, lineFade()) * (1. - F.resWR.w);         // [w]: darker behind the start page
   return o;
 }
 @fragment fn fsHex(i: HexO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no blending, no maths
@@ -1078,8 +1100,8 @@ fn over(a: hv4, b: hv4) -> hv4 { return a + b * (hf(1.) - a.a); }
     if (i === 0) { // floor: the pass cleared (nearly free); flat inside area when outside; hex lines; edge band + darkness
       pass.setPipeline(P.ring);
       if (plan.out) pass.draw(FLOOR_RING_SEG * 6, 1, 0, 0);
-      if (plan.hexes) { pass.setPipeline(P.hex); pass.draw(12, plan.hexes); pass.setPipeline(P.ring); }
-      pass.draw(FLOOR_RING_SEG * 6, 2, 0, plan.out ? 1 : 2); // kinds 1+2 or 2+3
+      if (plan.hexes) { pass.setPipeline(P.hex); pass.draw(plan.hexes * 6); pass.setPipeline(P.ring); }
+      if (plan.edge) pass.draw(FLOOR_RING_SEG * 6, 2, 0, plan.out ? 1 : 2); // kinds 1+2 or 2+3
       return;
     }
     const [p, off] = DRAWS[i], vc = counts[i * 2], ic = counts[i * 2 + 1];
@@ -1268,7 +1290,9 @@ const nearestSkin = (hex) => { // the picker's colour → the closest skin from 
 const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagini", "Zigzag", "Sir Hiss", "Boop", "Cobra Kai",
   "Pythonista", "Rattler", "Sidewinder", "Jormungandr", "Ouroboros", "Danger Noodle", "Spaghetti", "Slithers", "Taipan",
   "Adder", "Asp", "Basilisk", "Garter", "Krait", "Anaconda", "Boa", "Copperhead", "Hognose", "Kingsnake", "Milk Snake",
-  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces"];
+  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces",
+  "Ziggy", "Pretzel", "Hissy Fit", "Captain Coil", "Medusa", "Twister", "Slurp", "Sir Slides-a-lot", "Wyrm", "Sssteve",
+  "Fangs Out", "Noodle Doodle", "Scaley Dan", "Velvet Viper", "Zap"];
 
 (async () => {
   const $ = (id) => document.getElementById(id);
@@ -1747,7 +1771,9 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   pickSkin(skinSel);
   const nameEl = $("name"); nameEl.value = store.get("serpent.name") ?? "";
   let best = +(store.get("serpent.best.online") ?? 0);
-  const playerName = () => nameEl.value.trim() || "You";
+  // No nickname typed: a random name from the computer snakes' list, picked anew each game
+  let autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+  const playerName = () => nameEl.value.trim() || autoName;
   let state = "menu"; // menu | play | dead
 
   // this run's numbers, for the information sheet
@@ -1756,6 +1782,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     if (!connected) return;
     Object.assign(run, { t0: performance.now(), peak: 0, rankBest: 0, rankNow: 0, total: 0 }); localShot = null; touching = false;
     store.set("serpent.name", nameEl.value.trim());
+    if (!nameEl.value.trim()) autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     join();
     state = "play"; document.body.classList.add("playing");
     $("menu").classList.add("hidden"); $("over").classList.add("hidden");
@@ -1897,7 +1924,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     if (!connected || ws.readyState !== 1) { addChat("", "Not connected to the server.", true); return; }
     chatSentAt = now; chatLast = t;
     // text, then the typed name (the server uses it only before you join)
-    const enc = new TextEncoder(), tb = enc.encode(t).slice(0, 480), nb = enc.encode(nameEl.value.trim()).slice(0, 48);
+    const enc = new TextEncoder(), tb = enc.encode(t).slice(0, 480), nb = enc.encode(playerName()).slice(0, 48);
     const m = new Uint8Array(4 + tb.length + nb.length); m[0] = 7; m[1] = tb.length & 255; m[2] = tb.length >> 8; m.set(tb, 3); m[3 + tb.length] = nb.length; m.set(nb, 4 + tb.length);
     sendRaw(m);
     // the server sends every line back to its writer too: no echo means it doesn't know chat (an older server)
@@ -2253,6 +2280,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const perfEl = $("perf");
   let camX = 0, camY = 0, camH = 900, frameNo = 0, last = performance.now(), hudT = 0, perfT = 0, fpsN = 0, prepMs = 0, drawMs = 0;
 
+  const MENU_DIM = 0.4; let dimV = MENU_DIM;
   function frame(now) {
     requestAnimationFrame(frame);
     const playing = state === "play";
@@ -2309,7 +2337,11 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     frameOut[0] = foodHigh; frameOut[3] = ntup;
     frameBlk[0] = camX; frameBlk[1] = camY; frameBlk[2] = hw; frameBlk[3] = hh;
     frameBlk[4] = px; frameBlk[5] = (now / 1000) % 3600; frameBlk[6] = vw / innerWidth; frameBlk[7] = ((rt / 4) % 65536 + 65536) % 65536; // food clock in quarter-steps, smooth (fractions)
-    frameBlk[8] = vw; frameBlk[9] = vh; frameBlk[10] = WR; frameBlk[11] = 0;
+    frameBlk[8] = vw; frameBlk[9] = vh; frameBlk[10] = WR;
+    // start page / game over: the floor is drawn darker, free, instead of a see-through full-screen
+    // layer over the game (that was every pixel painted twice)
+    dimV += ((playing || grabPending ? 0 : MENU_DIM) - dimV) * Math.min(1, dt * 8);
+    frameBlk[11] = grabPending ? 0 : dimV;
     const t1 = performance.now();
     if (!gpuDown) { try { R.draw(frameNo++, playing, !perfEl.classList.contains("off")); } catch (e) { if (R.device && touchDevice) restartGPU(); else throw e; } }
     if (grabPending && !gpuDown) { grabPending = false; grabDeathShot(cv); } // copied right after drawing, while the canvas holds it
