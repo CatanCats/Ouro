@@ -655,7 +655,7 @@ function createGL(canvas, E) {
   let vw = 1, vh = 1;
 
   const R = {
-    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["floor", "food", "snakes", "labels", "map"],
+    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
@@ -670,6 +670,7 @@ function createGL(canvas, E) {
       const f = frameNo & 1;
       const qs = timing && tq && pending.length < 3 && (frameNo & 7) === 0 ? [] : null; // timed: 1 frame in 8 (see WebGPU)
       const mark = () => { if (!qs) return; if (qs.length) gl.endQuery(tq.TIME_ELAPSED_EXT); const q = gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT, q); qs.push(q); };
+      mark(); // upload (drivers may run the copies below when the first draw needs them: timed apart)
       // ONE upload: uniforms + snake headers + minimap + used food, from WASM memory
       gl.bindBuffer(gl.ARRAY_BUFFER, arena[f]);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, E.arenaBytes, 0, A.food + nFood * 8);
@@ -682,9 +683,10 @@ function createGL(canvas, E) {
       }
       gl.viewport(0, 0, vw, vh);
 
-      mark(); // floor: clear (nearly free); flat inside area when outside; hex lines; edge band + darkness (see FLOOR_RIM)
+      mark(); // clear (nearly free on most GPUs: whole blocks marked as one colour)
       floorPlan(E.frameBlk, plan);
       gl.clearColor(plan.clear[0], plan.clear[1], plan.clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      mark(); // floor: flat inside area when outside; dots; edge band + darkness (see FLOOR_RIM)
       gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
       gl.useProgram(ringP);
       if (plan.out) { gl.uniform1i(firstU, 0); gl.drawArrays(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6); } // inside area
@@ -700,7 +702,7 @@ function createGL(canvas, E) {
       mark(); // minimap
       if (nMini) { gl.useProgram(miniP); gl.bindVertexArray(miniVao[f]); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nMini); }
       if (qs) { gl.endQuery(tq.TIME_ELAPSED_EXT); pending.push(qs); }
-      while (pending.length && gl.getQueryParameter(pending[0][4], gl.QUERY_RESULT_AVAILABLE)) {
+      while (pending.length && gl.getQueryParameter(pending[0][pending[0].length - 1], gl.QUERY_RESULT_AVAILABLE)) {
         const done = pending.shift(), ok = !gl.getParameter(tq.GPU_DISJOINT_EXT);
         const ms = done.map((q) => { const v = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6; gl.deleteQuery(q); return v; });
         if (ok) { R.passMs = ms; R.gpuMs = ms.reduce((a, b) => a + b, 0); }

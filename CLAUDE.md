@@ -180,5 +180,6 @@ The online game is live at **https://br8t.com/ouro/** (deployed 30 Sep 2026). Th
 - Food: one 4-vertex quad per pellet, halo radius `FOOD_GLOW` = 1.7 pellet radii (was 1.9). An octagon version (fewer pixels, 8 vertices) measured slower on the owner's iGPU (food 0.20 → 0.33 ms) and was reverted.
 - Minimap: pixels that would add nothing are discarded (no blend), and the flat inside areas skip the edge maths.
 - No dynamic resolution: the owner asked that sharpness is never lowered automatically. Only the Quality setting (Sharp / Balanced / Fast) chooses the pixel density. Don't add it back.
+- WebGL P panel splits the old "floor" figure into `upload` (the frame's buffer/trail copies, which drivers may run at the first draw), `clear` and `floor` (16 Nov 2026: the owner saw floor 1.32 ms of 1.81 on WebGL; in SwiftShader the clear's cost lands in the next timer, so judge on real hardware).
 - GPU timing (P panel) runs on 1 frame in 8, because splitting a frame into timed passes costs CPU and GPU; the CPU figures now show normal frames.
 - Headless CPU "draw" times swing ±40% between runs (software GPU), so small CPU savings can't be measured there. `T` in `app.js` (`T.gl / T.n`) is the average draw time; a test copy can expose it on `window.__serpent`.
