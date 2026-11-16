@@ -11,28 +11,25 @@ const FLOOR_RIM_COL = [.62, .17, .25];         // the world's edge: a thin red l
 // Honeycomb DOTS (one at each hex corner, 2 CSS px square): ~17x fewer pixels than lines, so
 // they can be brighter, and their colour tells where you are (free: worked out per dot).
 const FLOOR_DOT = [.21, .25, .37];             // dots: well lighter than the floor
+const FLOOR_DOT_MID = [.42, .35, .13];         // inside the middle zone (35% of the world radius): gold
 const FLOOR_DOT_EDGE = [.52, .14, .18];        // the last 1600 units before the edge: turning red
 const FOOD_GLOW = "1.7";                        // food halo radius, in pellet radii
-const FLOOR_RING_SEG = 128;                    // segments of each ring, spread over the part of the edge in view only
-const FLOOR_RING_SPAN = 1000;                  // landmark: every this many units from the middle, a circle of brighter dots
+const FLOOR_RING_SEG = 512;                    // segments of the rings (the edge stays round)
 const FLOOR_HX = (46 * Math.sqrt(3)).toFixed(4), FLOOR_HY = "46.";  // hex lattice period (world units)
 /* The floor is one colour, so the screen is simply cleared to it (nearly free). The rest
    is worked out by the vertex shaders from the Frame block (nothing extra is uploaded);
    the CPU only picks the clear colour and the hex instance count
    (from the Frame block [camX camY halfW halfH | px ...| .. WR]). */
 function floorPlan(fb, p) {
-  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10], lit = 1 - fb[11]; // [11]: darker behind the start page
-  const d = Math.hypot(cx, cy), reach = Math.hypot(hw, hh) + 40;
-  p.out = d > WR;                                               // camera centre outside the world: clear to darkness
-  p.edge = d + reach > WR - Math.max(2, px * 1.5) && d - reach < WR + 32; // the edge on screen: else no ring draws at all
+  const cx = fb[0], cy = fb[1], hw = fb[2], hh = fb[3], px = fb[4], WR = fb[10];
+  p.out = Math.hypot(cx, cy) > WR;                              // camera centre outside the world: clear to darkness
   const c = p.clear || (p.clear = [0, 0, 0, 1]), src = p.out ? FLOOR_DARK : FLOOR_BASE;
-  for (let i = 0; i < 3; i++) c[i] = src[i] * lit;
+  for (let i = 0; i < 3; i++) c[i] = src[i];
   const fade = 1 - Math.min(1, Math.max(0, (px - 3) / 2));      // zoomed far out: lines fade, then are skipped
   // columns and rows with a margin; the shader derives its own column count, which may
   // differ by one through rounding: the margin keeps the screen covered either way
-  // dots: 4 per hex cell (2 lattices x 2 owned corners), 6 vertices each, in ONE plain draw
-  p.hexes = fade > 0 ? (Math.ceil((2 * hw) / (46 * Math.sqrt(3))) + 3) * (Math.ceil((2 * hh) / 46) + 4) * 4 : 0;
-  if (p.hexes > 60000) p.hexes = 0;                             // (only when zoomed out enormously, e.g. after death)
+  p.hexes = fade > 0 ? (Math.ceil((2 * hw) / (46 * Math.sqrt(3))) + 3) * (Math.ceil((2 * hh) / 46) + 4) * 2 : 0;
+  if (p.hexes > 30000) p.hexes = 0;                             // (only when zoomed out enormously, e.g. after death)
   return p;
 }
 
@@ -80,14 +77,9 @@ function createGL(canvas, E) {
     else if(kind==1){ R=vec2(rOut,rHide); vis=d+reach>rOut && d-reach<rHide; vCol=vec3(${FLOOR_DARK.join(",")}); }
     else if(kind==2){ R=vec2(rIn,rOut); vis=d+reach>rIn && d-reach<rOut; vCol=vec3(${FLOOR_RIM_COL.join(",")}); }
     else { R=vec2(rOut,d+reach+8.); vis=d+reach>rOut; vCol=vec3(${FLOOR_DARK.join(",")}); }
-    // only the arc in view (kinds 1-3: the ring is thin, or the camera is inside it, so the
-    // arc of its inner radius within reach + its width covers every visible piece); kind 0: whole
-    float ca=atan(uCamHalf.y,uCamHalf.x), re=reach+(R.y-R.x>64.?0.:R.y-R.x)+4., r0=max(R.x,1.);
-    float cs=(d*d+r0*r0-re*re)/(2.*max(d,1.)*r0), span=(kind==0||cs<=-1.)?3.14159265:acos(min(cs,1.));
-    float a=ca+(float(q+da)*${(2 / FLOOR_RING_SEG).toFixed(8)}-1.)*span, r=dr==1?R.y:R.x;
+    float a=float(q+da)*${(2 * Math.PI / FLOOR_RING_SEG).toFixed(8)}, r=dr==1?R.y:R.x;
     vec2 w=vec2(cos(a),sin(a))*r, c=(w-uCamHalf.xy)/uCamHalf.zw;
     gl_Position=vis?vec4(c.x,-c.y,0,1):vec4(2,2,2,1);
-    vCol*=1.-uResWR.w;                                          // darker behind the start page
   }`;
   const RING_FS = `#version 300 es
   precision mediump float;
@@ -104,23 +96,18 @@ function createGL(canvas, E) {
     vec2 S=vec2(${FLOOR_HX},${FLOOR_HY});
     int nx=int(ceil(2.*uCamHalf.z/S.x))+3;                      // columns, first column and row: as floorPlan
     ivec2 f0=ivec2(floor((uCamHalf.xy-uCamHalf.zw)/S))-1;
-    int di=gl_VertexID/6, k=gl_VertexID-di*6;                    // one dot per 6 vertices: no instancing (tiny instances run badly)
-    int e=di&1, lat=(di>>1)&1, cell=di>>2;
+    int lat=gl_InstanceID&1, cell=gl_InstanceID>>1;
     vec2 ctr=(vec2(float(cell%nx+f0.x),float(cell/nx+f0.y))+float(lat)*.5)*S;
     if(length(ctr)>uResWR.z){ gl_Position=vec4(2,2,2,1); return; } // outside the world: no dots
-    vec2 q=vec2((k==1||k==4||k==5)?1.:-1., (k==2||k==3||k==5)?1.:-1.); // 2 triangles
+    int e=gl_VertexID/6, k=gl_VertexID-e*6;
+    vec2 q=vec2((k==1||k==4||k==5)?1.:-1., (k==2||k==3||k==5)?1.:-1.);
     vec2 P=ctr+DC[e]*46.;
     vec2 c=(P+q*uPxTime.x*max(1.,uPxTime.z)-uCamHalf.xy)/uCamHalf.zw; // a square 2 CSS pixels wide
     gl_Position=vec4(c.x,-c.y,0,1);
     float d=length(P), WR=uResWR.z;
-    vec3 col=vec3(${FLOOR_DOT.join(",")});
+    vec3 col=mix(vec3(${FLOOR_DOT.join(",")}), vec3(${FLOOR_DOT_MID.join(",")}), 1.-smoothstep(WR*.35-150.,WR*.35,d));
     col=mix(col, vec3(${FLOOR_DOT_EDGE.join(",")}), smoothstep(WR-1600.,WR-200.,d));
-    // detail, free (per vertex, no extra pixels): each dot its own brightness, and a dotted
-    // circle every FLOOR_RING_SPAN units from the middle (how far in you are)
-    float h=fract(sin(dot(floor(P),vec2(12.9898,78.233)))*43758.5453);
-    float ring=abs(mod(d+23.,${FLOOR_RING_SPAN}.)-23.)<23.?1.7:1.;
-    col*=(.72+.5*h)*ring;
-    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade())*(1.-uResWR.w); // [w]: darker behind the start page
+    vCol=mix(vec3(${FLOOR_BASE.join(",")}), col, lineFade());
   }`;
   const HEX_FS = `#version 300 es
   precision mediump float;
@@ -431,8 +418,8 @@ function createGL(canvas, E) {
       gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
       gl.useProgram(ringP);
       if (plan.out) { gl.uniform1i(firstU, 0); gl.drawArrays(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6); } // inside area
-      if (plan.hexes) { gl.useProgram(hexP); gl.drawArrays(gl.TRIANGLES, 0, plan.hexes * 6); gl.useProgram(ringP); }
-      if (plan.edge) { gl.uniform1i(firstU, plan.out ? 1 : 2); gl.drawArraysInstanced(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6, 2); } // kinds 1+2 or 2+3
+      if (plan.hexes) { gl.useProgram(hexP); gl.drawArraysInstanced(gl.TRIANGLES, 0, 12, plan.hexes); gl.useProgram(ringP); }
+      gl.uniform1i(firstU, plan.out ? 1 : 2); gl.drawArraysInstanced(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6, 2); // kinds 1+2 or 2+3
       gl.enable(gl.BLEND);
       mark(); // food
       if (nFood) { gl.useProgram(foodP); gl.bindVertexArray(foodVao[f]); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nFood); }

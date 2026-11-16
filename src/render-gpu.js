@@ -53,40 +53,31 @@ struct RingO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) co
   if (kind == 0u) { R = vec2f(0., rIn); vis = d - reach < rIn; col = FB; }               // 0: inside (camera outside)
   else if (kind == 1u) { R = vec2f(rOut, rHide); vis = d + reach > rOut && d - reach < rHide; } // 1: thin dark ring
   else if (kind == 2u) { R = vec2f(rIn, rOut); vis = d + reach > rIn && d - reach < rOut; col = vec3f(${FLOOR_RIM_COL.join(", ")}); } // 2: edge line
-  // only the arc in view (see render-gl.js); kind 0: the whole circle
-  let ca = atan2(F.camHalf.y, F.camHalf.x); let re = reach + select(R.y - R.x, 0., R.y - R.x > 64.) + 4.; let r0 = max(R.x, 1.);
-  let cs = (d * d + r0 * r0 - re * re) / (2. * max(d, 1.) * r0);
-  let span = select(acos(min(cs, 1.)), 3.14159265, kind == 0u || cs <= -1.);
-  let a = ca + ((f32(q) + dk.x) * ${(2 / FLOOR_RING_SEG).toFixed(8)} - 1.) * span; let r = select(R.x, R.y, dk.y > .5);
+  let a = (f32(q) + dk.x) * ${(2 * Math.PI / FLOOR_RING_SEG).toFixed(8)}; let r = select(R.x, R.y, dk.y > .5);
   let w = vec2f(cos(a), sin(a)) * r; let c = (w - F.camHalf.xy) / F.camHalf.zw;
-  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col * (1. - F.resWR.w); return o;
+  var o: RingO; o.pos = select(vec4f(2., 2., 2., 1.), vec4f(c.x, -c.y, 0., 1.), vis); o.col = col; return o;
 }
 @fragment fn fsRing(i: RingO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no maths per pixel
 struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col: vec3f };
-@vertex fn vsHex(@builtin(vertex_index) vi: u32) -> HexO {
-  let ii = vi / 6u;                                                // one dot per 6 vertices: no instancing (tiny instances run badly)
+@vertex fn vsHex(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> HexO {
   // a dot at each hex corner: each hex owns 2 of its 6 (every corner is shared by 3 hexes:
   // its right one and its upper-right one); unit hex: inradius .5
   var dc = array<vec2f, 2>(vec2f(.5774, 0.), vec2f(.2887, .5));
   let S = vec2f(${FLOOR_HX}, ${FLOOR_HY});
   let nx = i32(ceil(2. * F.camHalf.z / S.x)) + 3;               // columns, first column and row: as floorPlan
   let f0 = vec2i(floor((F.camHalf.xy - F.camHalf.zw) / S)) - 1;
-  let cell = i32(ii >> 2u); let e = ii & 1u;
-  let ctr = (vec2f(f32(cell % nx + f0.x), f32(cell / nx + f0.y)) + f32((ii >> 1u) & 1u) * .5) * S;
+  let cell = i32(ii >> 1u);
+  let ctr = (vec2f(f32(cell % nx + f0.x), f32(cell / nx + f0.y)) + f32(ii & 1u) * .5) * S;
   var o: HexO;
   if (length(ctr) > F.resWR.z) { o.pos = vec4f(2., 2., 2., 1.); return o; } // outside the world: no dots
-  let k = corner(vi % 6u);                                         // 2 triangles
+  let e = vi / 6u; let k = corner(vi % 6u);
   let P = ctr + dc[e] * 46.;
   let c = (P + (k * 2. - 1.) * F.pxTime.x * max(1., F.pxTime.z) - F.camHalf.xy) / F.camHalf.zw; // a square 2 CSS pixels wide
   o.pos = vec4f(c.x, -c.y, 0., 1.);
   let d = length(P); let WR = F.resWR.z;
-  var col = vec3f(${FLOOR_DOT.join(", ")});
+  var col = mix(vec3f(${FLOOR_DOT.join(", ")}), vec3f(${FLOOR_DOT_MID.join(", ")}), 1. - smoothstep(WR * .35 - 150., WR * .35, d));
   col = mix(col, vec3f(${FLOOR_DOT_EDGE.join(", ")}), smoothstep(WR - 1600., WR - 200., d));
-  // detail, free (per vertex): each dot its own brightness; a dotted circle every FLOOR_RING_SPAN units
-  let h = fract(sin(dot(floor(P), vec2f(12.9898, 78.233))) * 43758.5453);
-  let rg = select(1., 1.7, abs(((d + 23.) - ${FLOOR_RING_SPAN}. * floor((d + 23.) / ${FLOOR_RING_SPAN}.)) - 23.) < 23.);
-  col *= (.72 + .5 * h) * rg;
-  o.col = mix(FB, col, lineFade()) * (1. - F.resWR.w);         // [w]: darker behind the start page
+  o.col = mix(FB, col, lineFade());
   return o;
 }
 @fragment fn fsHex(i: HexO) -> @location(0) vec4f { return vec4f(i.col, 1.); } // one flat colour: no blending, no maths
@@ -332,8 +323,8 @@ fn over(a: hv4, b: hv4) -> hv4 { return a + b * (hf(1.) - a.a); }
     if (i === 0) { // floor: the pass cleared (nearly free); flat inside area when outside; hex lines; edge band + darkness
       pass.setPipeline(P.ring);
       if (plan.out) pass.draw(FLOOR_RING_SEG * 6, 1, 0, 0);
-      if (plan.hexes) { pass.setPipeline(P.hex); pass.draw(plan.hexes * 6); pass.setPipeline(P.ring); }
-      if (plan.edge) pass.draw(FLOOR_RING_SEG * 6, 2, 0, plan.out ? 1 : 2); // kinds 1+2 or 2+3
+      if (plan.hexes) { pass.setPipeline(P.hex); pass.draw(12, plan.hexes); pass.setPipeline(P.ring); }
+      pass.draw(FLOOR_RING_SEG * 6, 2, 0, plan.out ? 1 : 2); // kinds 1+2 or 2+3
       return;
     }
     const [p, off] = DRAWS[i], vc = counts[i * 2], ic = counts[i * 2 + 1];

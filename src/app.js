@@ -25,9 +25,7 @@ const nearestSkin = (hex) => { // the picker's colour → the closest skin from 
 const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagini", "Zigzag", "Sir Hiss", "Boop", "Cobra Kai",
   "Pythonista", "Rattler", "Sidewinder", "Jormungandr", "Ouroboros", "Danger Noodle", "Spaghetti", "Slithers", "Taipan",
   "Adder", "Asp", "Basilisk", "Garter", "Krait", "Anaconda", "Boa", "Copperhead", "Hognose", "Kingsnake", "Milk Snake",
-  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces",
-  "Ziggy", "Pretzel", "Hissy Fit", "Captain Coil", "Medusa", "Twister", "Slurp", "Sir Slides-a-lot", "Wyrm", "Sssteve",
-  "Fangs Out", "Noodle Doodle", "Scaley Dan", "Velvet Viper", "Zap"];
+  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces"];
 
 (async () => {
   const $ = (id) => document.getElementById(id);
@@ -206,9 +204,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const nameEl = $("name"); nameEl.value = store.get("serpent.name") ?? "";
   let best = +(store.get("serpent.best") ?? 0);
   const names = []; for (let i = 0; i < NS; i++) names.push(BOT_NAMES[(i * 7 + 3) % BOT_NAMES.length] + ["", " II", " III", " IV"][Math.min(3, Math.floor(i / BOT_NAMES.length))]);
-  // No nickname typed: a random name from the computer snakes' list, picked anew each game
-  let autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
-  const playerName = () => nameEl.value.trim() || autoName;
+  const playerName = () => nameEl.value.trim() || "You";
 
   let state = "menu"; // menu | play | dead
 
@@ -217,7 +213,6 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   function start() {
     Object.assign(run, { t0: performance.now(), peak: 0, rankBest: 0, rankNow: 0, total: 0 });
     store.set("serpent.name", nameEl.value.trim());
-    if (!nameEl.value.trim()) autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     W.spawnPlayer(skinSel); // also moves the camera there and fills food around it
     state = "play"; document.body.classList.add("playing");
     $("menu").classList.add("hidden"); $("over").classList.add("hidden");
@@ -400,7 +395,6 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const T = { sim: 0, prep: 0, gl: 0, hud: 0, n: 0 };
   let frameNo = 0, last = performance.now(), fpsAcc = 0, perfT = 0, hudT = 0;
 
-  const MENU_DIM = 0.4; let dimV = MENU_DIM;
   function frame(now) {
     requestAnimationFrame(frame);
     const playing = state === "play";
@@ -423,10 +417,6 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
 
     const timing = !perfEl.classList.contains("off");
     if (grabPending) W.deathPose(); // the moment of death: this one frame shows your snake where it crashed
-    // start page / game over: the floor is drawn darker (frame block [11]), free, instead of a
-    // see-through full-screen layer over the game (that was every pixel painted twice)
-    dimV += ((playing || grabPending ? 0 : MENU_DIM) - dimV) * Math.min(1, dt * 8);
-    frameBlk[11] = grabPending ? 0 : dimV;
     if (!gpuDown) { try { R.draw(frameNo++, playing, timing); } catch (e) { if (R.device && touchDevice) restartGPU(); else throw e; } }
     if (grabPending && !gpuDown) { grabPending = false; grabDeathShot(cv); } // copied right after drawing, while the canvas holds it
     const t3 = performance.now();
