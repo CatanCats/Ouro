@@ -25,7 +25,9 @@ const nearestSkin = (hex) => { // the picker's colour → the closest skin from 
 const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagini", "Zigzag", "Sir Hiss", "Boop", "Cobra Kai",
   "Pythonista", "Rattler", "Sidewinder", "Jormungandr", "Ouroboros", "Danger Noodle", "Spaghetti", "Slithers", "Taipan",
   "Adder", "Asp", "Basilisk", "Garter", "Krait", "Anaconda", "Boa", "Copperhead", "Hognose", "Kingsnake", "Milk Snake",
-  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces"];
+  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces",
+  "Ziggy", "Pretzel", "Hissy Fit", "Captain Coil", "Medusa", "Twister", "Slurp", "Sir Slides-a-lot", "Wyrm", "Sssteve",
+  "Fangs Out", "Noodle Doodle", "Scaley Dan", "Velvet Viper", "Zap"];
 
 (async () => {
   const $ = (id) => document.getElementById(id);
@@ -204,7 +206,9 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const nameEl = $("name"); nameEl.value = store.get("serpent.name") ?? "";
   let best = +(store.get("serpent.best") ?? 0);
   const names = []; for (let i = 0; i < NS; i++) names.push(BOT_NAMES[(i * 7 + 3) % BOT_NAMES.length] + ["", " II", " III", " IV"][Math.min(3, Math.floor(i / BOT_NAMES.length))]);
-  const playerName = () => nameEl.value.trim() || "You";
+  // No nickname typed: a random name from the computer snakes' list, picked anew each game
+  let autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+  const playerName = () => nameEl.value.trim() || autoName;
 
   let state = "menu"; // menu | play | dead
 
@@ -213,6 +217,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   function start() {
     Object.assign(run, { t0: performance.now(), peak: 0, rankBest: 0, rankNow: 0, total: 0 });
     store.set("serpent.name", nameEl.value.trim());
+    if (!nameEl.value.trim()) autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     W.spawnPlayer(skinSel); // also moves the camera there and fills food around it
     state = "play"; document.body.classList.add("playing");
     $("menu").classList.add("hidden"); $("over").classList.add("hidden");

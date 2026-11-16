@@ -35,7 +35,9 @@ const nearestSkin = (hex) => { // the picker's colour → the closest skin from 
 const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagini", "Zigzag", "Sir Hiss", "Boop", "Cobra Kai",
   "Pythonista", "Rattler", "Sidewinder", "Jormungandr", "Ouroboros", "Danger Noodle", "Spaghetti", "Slithers", "Taipan",
   "Adder", "Asp", "Basilisk", "Garter", "Krait", "Anaconda", "Boa", "Copperhead", "Hognose", "Kingsnake", "Milk Snake",
-  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces"];
+  "Racer", "Whip", "Coral", "Sssam", "Hisssy", "Zero Cool", "Lil Fang", "Mr. Scales", "Big Tony", "Worm", "Longboi", "Snek", "Nope Rope", "Sneaky", "Wriggle", "Laces",
+  "Ziggy", "Pretzel", "Hissy Fit", "Captain Coil", "Medusa", "Twister", "Slurp", "Sir Slides-a-lot", "Wyrm", "Sssteve",
+  "Fangs Out", "Noodle Doodle", "Scaley Dan", "Velvet Viper", "Zap"];
 
 (async () => {
   const $ = (id) => document.getElementById(id);
@@ -514,7 +516,9 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   pickSkin(skinSel);
   const nameEl = $("name"); nameEl.value = store.get("serpent.name") ?? "";
   let best = +(store.get("serpent.best.online") ?? 0);
-  const playerName = () => nameEl.value.trim() || "You";
+  // No nickname typed: a random name from the computer snakes' list, picked anew each game
+  let autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
+  const playerName = () => nameEl.value.trim() || autoName;
   let state = "menu"; // menu | play | dead
 
   // this run's numbers, for the information sheet
@@ -523,6 +527,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     if (!connected) return;
     Object.assign(run, { t0: performance.now(), peak: 0, rankBest: 0, rankNow: 0, total: 0 }); localShot = null; touching = false;
     store.set("serpent.name", nameEl.value.trim());
+    if (!nameEl.value.trim()) autoName = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
     join();
     state = "play"; document.body.classList.add("playing");
     $("menu").classList.add("hidden"); $("over").classList.add("hidden");
@@ -664,7 +669,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
     if (!connected || ws.readyState !== 1) { addChat("", "Not connected to the server.", true); return; }
     chatSentAt = now; chatLast = t;
     // text, then the typed name (the server uses it only before you join)
-    const enc = new TextEncoder(), tb = enc.encode(t).slice(0, 480), nb = enc.encode(nameEl.value.trim()).slice(0, 48);
+    const enc = new TextEncoder(), tb = enc.encode(t).slice(0, 480), nb = enc.encode(playerName()).slice(0, 48);
     const m = new Uint8Array(4 + tb.length + nb.length); m[0] = 7; m[1] = tb.length & 255; m[2] = tb.length >> 8; m.set(tb, 3); m[3 + tb.length] = nb.length; m.set(nb, 4 + tb.length);
     sendRaw(m);
     // the server sends every line back to its writer too: no echo means it doesn't know chat (an older server)
