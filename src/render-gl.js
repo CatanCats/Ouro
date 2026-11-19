@@ -37,13 +37,8 @@ function floorPlan(fb, p) {
 }
 
 function createGL(canvas, E) {
-  // Low-latency canvas (desynchronized): on Windows the normal WebGL image is shared with the
-  // browser's compositor, and Intel GPUs can't fast-clear or compress shared images, so the
-  // clear wrote every pixel (owner's laptop: clear ~1 ms, floor and map slower than WebGPU).
-  // A desynchronized canvas is presented through its own swap chain instead. ?lowlatency=0: off.
-  const lowLat = new URLSearchParams(location.search).get("lowlatency") !== "0";
   const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false,
-    premultipliedAlpha: true, powerPreference: "high-performance", desynchronized: lowLat });
+    premultipliedAlpha: true, powerPreference: "high-performance" });
   if (!gl) return null;
   const { NS, RING } = E;
   // Skin palette in a uniform buffer, looked up once per VERTEX and handed to the pixels
@@ -416,7 +411,7 @@ function createGL(canvas, E) {
   const R = {
     // graphics memory the game itself made: 2 arenas, trail, food and label textures, palette
     gpuBytes: 2 * A.size + RING * NS * 4 + 1024 * FOOD_ROWS * 8 + E.AW * E.AH * 4 + E.palette.byteLength,
-    name: gl.getContextAttributes().desynchronized ? "WebGL 2 (low latency)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "clear again", "floor", "food", "snakes", "labels", "map"],
+    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
@@ -454,9 +449,6 @@ function createGL(canvas, E) {
       mark(); // clear (nearly free on most GPUs: whole blocks marked as one colour)
       floorPlan(E.frameBlk, plan);
       gl.clearColor(plan.clear[0], plan.clear[1], plan.clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
-      // diagnosis (timed frames only, P panel open): the same clear once more, timed apart. If it
-      // is nearly free, the first clear's time is waiting (e.g. for the screen image), not work
-      mark(); if (qs) gl.clear(gl.COLOR_BUFFER_BIT);
       mark(); // floor: flat inside area when outside; dots; edge band + darkness (see FLOOR_RIM)
       gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
       gl.useProgram(ringP);
