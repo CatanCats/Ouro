@@ -295,7 +295,12 @@ function floorPlan(fb, p) {
 }
 
 function createGL(canvas, E) {
-  const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false,
+  // ?glalpha=1 (test): an alpha canvas. With alpha: false, Chrome keeps the alpha channel at 1
+  // with a colour mask, and ANGLE (Direct3D on Windows) may then clear by DRAWING a full-screen
+  // quad instead of a fast clear (owner's Intel iGPU: clear 1.12 ms). Every pixel we draw has
+  // alpha 1 anyway (opaque floor, premultiplied blending keeps 1), so the picture is the same.
+  const glAlpha = new URLSearchParams(location.search).get("glalpha") === "1";
+  const gl = canvas.getContext("webgl2", { antialias: false, alpha: glAlpha, depth: false, stencil: false,
     premultipliedAlpha: true, powerPreference: "high-performance" });
   if (!gl) return null;
   const { NS, RING } = E;
@@ -667,7 +672,7 @@ function createGL(canvas, E) {
   let vw = 1, vh = 1;
 
   const R = {
-    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
+    name: glAlpha ? "WebGL 2 (alpha)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
@@ -1384,7 +1389,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   // lower cap is the biggest single saving (Sharp = up to 2x, Balanced 1.25x, Fast 1x).
   const QUAL = { sharp: 2, balanced: 1.25, fast: 1 };
   let quality = store.get("serpent.quality") || "sharp";
-  $("tech").textContent = `WebAssembly sim · GPU-built snakes · 5 draws`;
+  $("tech").textContent = `WebAssembly sim · GPU-built snakes`;
   // Renderer switch (Auto = WebGPU if available). Applying it needs a fresh page.
   const rsEl = $("rsw");
   for (const b of rsEl.querySelectorAll("button")) {

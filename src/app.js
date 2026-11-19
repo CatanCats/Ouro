@@ -157,7 +157,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   // lower cap is the biggest single saving (Sharp = up to 2x, Balanced 1.25x, Fast 1x).
   const QUAL = { sharp: 2, balanced: 1.25, fast: 1 };
   let quality = store.get("serpent.quality") || "sharp";
-  $("tech").textContent = `WebAssembly sim · GPU-built snakes · 5 draws`;
+  $("tech").textContent = `WebAssembly sim · GPU-built snakes`;
   // Renderer switch (Auto = WebGPU if available). Applying it needs a fresh page.
   const rsEl = $("rsw");
   for (const b of rsEl.querySelectorAll("button")) {
