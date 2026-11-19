@@ -37,12 +37,7 @@ function floorPlan(fb, p) {
 }
 
 function createGL(canvas, E) {
-  // ?renderer=webgl-alpha (test; also ?glalpha=1): an alpha canvas. With alpha: false, Chrome keeps the alpha channel at 1
-  // with a colour mask, and ANGLE (Direct3D on Windows) may then clear by DRAWING a full-screen
-  // quad instead of a fast clear (owner's Intel iGPU: clear 1.12 ms). Every pixel we draw has
-  // alpha 1 anyway (opaque floor, premultiplied blending keeps 1), so the picture is the same.
-  const glAlpha = !!E.glAlpha || new URLSearchParams(location.search).get("glalpha") === "1"; // ?renderer=webgl-alpha
-  const gl = canvas.getContext("webgl2", { antialias: false, alpha: glAlpha, depth: false, stencil: false,
+  const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false,
     premultipliedAlpha: true, powerPreference: "high-performance" });
   if (!gl) return null;
   const { NS, RING } = E;
@@ -414,7 +409,7 @@ function createGL(canvas, E) {
   let vw = 1, vh = 1;
 
   const R = {
-    name: glAlpha ? "WebGL 2 (alpha)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
+    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {

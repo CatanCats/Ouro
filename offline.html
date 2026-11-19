@@ -231,7 +231,7 @@
     </div>
     <div class="rsw" id="rsw" role="group" aria-label="Renderer">
       <span>Renderer</span>
-      <button data-r="auto">Auto</button><button data-r="webgpu">WebGPU</button><button data-r="webgl">WebGL</button><button data-r="webgl-alpha" title="WebGL with a see-through canvas: a test of a faster screen clear on Windows">WebGL α</button>
+      <button data-r="auto">Auto</button><button data-r="webgpu">WebGPU</button><button data-r="webgl">WebGL</button>
     </div>
     <div class="tech"><span id="tech"></span> · now: <span id="rnow">…</span></div>
     <div class="slow" id="slowNote" hidden></div>
@@ -295,12 +295,7 @@ function floorPlan(fb, p) {
 }
 
 function createGL(canvas, E) {
-  // ?renderer=webgl-alpha (test; also ?glalpha=1): an alpha canvas. With alpha: false, Chrome keeps the alpha channel at 1
-  // with a colour mask, and ANGLE (Direct3D on Windows) may then clear by DRAWING a full-screen
-  // quad instead of a fast clear (owner's Intel iGPU: clear 1.12 ms). Every pixel we draw has
-  // alpha 1 anyway (opaque floor, premultiplied blending keeps 1), so the picture is the same.
-  const glAlpha = !!E.glAlpha || new URLSearchParams(location.search).get("glalpha") === "1"; // ?renderer=webgl-alpha
-  const gl = canvas.getContext("webgl2", { antialias: false, alpha: glAlpha, depth: false, stencil: false,
+  const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false,
     premultipliedAlpha: true, powerPreference: "high-performance" });
   if (!gl) return null;
   const { NS, RING } = E;
@@ -672,7 +667,7 @@ function createGL(canvas, E) {
   let vw = 1, vh = 1;
 
   const R = {
-    name: glAlpha ? "WebGL 2 (alpha)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
+    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
@@ -1307,11 +1302,8 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
      switches silently. ?renderer=webgl (or the menu) picks WebGL directly. */
   const canvas = $("gl");
   const saved = store.get("serpent.renderer") || "auto";
-  const urlR = new URLSearchParams(location.search).get("renderer");
-  if (urlR === "webgl-alpha") store.set("serpent.renderer", urlR); // test setting, kept until another renderer is picked
-  const wantRaw = urlR || saved;
-  E.glAlpha = wantRaw === "webgl-alpha"; // WebGL with an alpha canvas (see render-gl.js)
-  const want = E.glAlpha ? "webgl" : wantRaw;
+  // "webgl-alpha" was a test setting (19 Nov 2026, no gain): it means plain WebGL now
+  const want = (new URLSearchParams(location.search).get("renderer") || saved).replace("webgl-alpha", "webgl");
   // Is this browser running the site with its JavaScript/WebAssembly optimizer off
   // (Edge "Enhance your security on the web", Chrome "V8 optimizer" blocked)? That
   // mode also turns WebGPU off and makes the game ~30x slower. A tight loop tells:
