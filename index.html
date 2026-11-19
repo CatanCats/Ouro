@@ -2049,10 +2049,13 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   // past it are cut off), the bottom-left corner both. The board is pinned top-right, so
   // dragging left/down grows it. × folds it to its title bar (▾ opens it). All remembered.
   const lbOl = $("lb"), lbX = $("lbX");
-  let lbW = parseFloat(store.get("serpent.lbw")) || 0, lbH = parseFloat(store.get("serpent.lbh")) || 0; // 0: fit the content
+  // height in WHOLE ROWS (never a part row or an empty strip at the bottom); 0: fit the content
+  let lbW = parseFloat(store.get("serpent.lbw")) || 0, lbRows = parseInt(store.get("serpent.lbrows")) || 0;
+  if (!lbRows && parseFloat(store.get("serpent.lbh")) > 0) lbRows = Math.max(1, Math.round(parseFloat(store.get("serpent.lbh")) / 22)); // an old pixel height
+  const lbRowH = () => (lbOl.firstElementChild ? lbOl.firstElementChild.offsetHeight : 0) || 20;
   const applyLbSize = () => {
-    boardEl.style.width = lbW ? lbW + "px" : ""; lbOl.style.maxHeight = lbH ? lbH + "px" : "";
-    boardEl.classList.toggle("sized", !!(lbW || lbH));
+    boardEl.style.width = lbW ? lbW + "px" : ""; lbOl.style.maxHeight = lbRows ? lbRows * lbRowH() + "px" : "";
+    boardEl.classList.toggle("sized", !!(lbW || lbRows));
     // made narrow by hand: the level badges shrink to one coloured letter, then go, so the room shows names
     boardEl.classList.toggle("tgS", lbW > 0 && lbW < 250); boardEl.classList.toggle("tgX", lbW > 0 && lbW < 190);
   };
@@ -2062,17 +2065,17 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   lbX.onclick = (e) => { const c = !boardEl.classList.contains("closed"); setLbClosed(c); store.set("serpent.lbclosed", c ? "1" : "0"); e.currentTarget.blur(); };
   for (const h of boardEl.querySelectorAll("[data-rs]")) h.addEventListener("pointerdown", (e) => {
     e.preventDefault(); e.stopPropagation(); h.setPointerCapture(e.pointerId);
-    const dir = h.dataset.rs, x0 = e.clientX, y0 = e.clientY, w0 = boardEl.offsetWidth, h0 = lbOl.offsetHeight;
+    const dir = h.dataset.rs, x0 = e.clientX, y0 = e.clientY, w0 = boardEl.offsetWidth, h0 = lbOl.offsetHeight, rh = lbRowH(), all = lbOl.children.length || 10;
     const move = (m) => { // screen pixels → the board's own (it may be scaled)
       if (dir.includes("w")) lbW = Math.round(Math.max(150, Math.min(640, w0 + (x0 - m.clientX) / lbScale)));
-      if (dir.includes("s")) lbH = Math.round(Math.max(20, Math.min(lbOl.scrollHeight, h0 + (m.clientY - y0) / lbScale)));
+      if (dir.includes("s")) { const r = Math.round((h0 + (m.clientY - y0) / lbScale) / rh); lbRows = r >= all ? 0 : Math.max(1, r); } // all rows: fit
       applyLbSize();
     };
-    const up = () => { h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up); h.removeEventListener("pointercancel", up); store.set("serpent.lbw", lbW); store.set("serpent.lbh", lbH); };
+    const up = () => { h.removeEventListener("pointermove", move); h.removeEventListener("pointerup", up); h.removeEventListener("pointercancel", up); store.set("serpent.lbw", lbW); store.set("serpent.lbrows", lbRows); store.set("serpent.lbh", 0); };
     h.addEventListener("pointermove", move); h.addEventListener("pointerup", up); h.addEventListener("pointercancel", up);
   });
   // a double click on any edge goes back to fitting the content
-  for (const h of boardEl.querySelectorAll("[data-rs]")) h.addEventListener("dblclick", () => { lbW = lbH = 0; applyLbSize(); store.set("serpent.lbw", 0); store.set("serpent.lbh", 0); });
+  for (const h of boardEl.querySelectorAll("[data-rs]")) h.addEventListener("dblclick", () => { lbW = lbRows = 0; applyLbSize(); store.set("serpent.lbw", 0); store.set("serpent.lbrows", 0); store.set("serpent.lbh", 0); });
   let lastLb = "";
   function updateHud() {
     let html = "";
@@ -2080,7 +2083,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
       const tag = s === me ? `<span class="tg you" data-l="YOU" data-s="Y"></span>` : hu ? `<span class="tg pl" data-l="PLAYER" data-s="P"></span>` : `<span class="tg t${t}" title="${TIERS[t]}" data-l="${TIERS[t]}" data-s="${TIERS[t][0]}"></span>`;
       html += `<li class="${s === me ? "me" : ""}"><span class="n">${i + 1}</span><span class="dot" style="background:${SKINS[sk & 127][0]}"></span><span class="nm">${esc(s === me ? playerName() : hu ? pnames[s] || "Player" : botName(s))}</span>${tag}<span class="sc">${Math.floor(m * 10)}</span></li>`;
     });
-    if (html !== lastLb) { lbEl.innerHTML = html; lastLb = html; }
+    if (html !== lastLb) { lbEl.innerHTML = html; lastLb = html; if (lbRows) applyLbSize(); }
     for (let s = 0; s < NS; s++) {
       if (!alive[s]) continue;
       const key = human[s] ? "p:" + (s === me ? playerName() : pnames[s]) : "t" + tier[s];
