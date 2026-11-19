@@ -362,6 +362,8 @@ fn over(a: hv4, b: hv4) -> hv4 { return a + b * (hf(1.) - a.a); }
   if (err) throw new Error("WebGPU setup: " + err.message);
 
   const R = {
+    // graphics memory the game itself made: arena, trail, label atlas, palette, small buffers
+    gpuBytes: A.size + NS * RING * 4 + E.AW * E.AH * 4 + E.palette.byteLength + 16 + (canTime ? 192 : 0),
     name: "WebGPU" + (F16 ? " (f16)" : ""), gpuMs: -1, passMs: null, canTime, device,
     passNames: ["clear", "floor", "food", "snakes", "labels", "map"],
     resize() {},

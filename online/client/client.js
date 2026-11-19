@@ -1024,6 +1024,22 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   }
 
   /* ---------------- main loop ---------------- */
+  // RAM line for the P panel: the page's JavaScript heap (Chrome/Edge report it), the game's own
+  // data (WebAssembly memory offline; the snapshot/trail arrays online), what the game put in
+  // graphics memory, and the screen images (canvas size x 4 bytes x about 3 buffers: an estimate)
+  const MB = (b) => (b / 1048576).toFixed(1);
+  // Exact page memory needs a cross-origin-isolated page (measureUserAgentSpecificMemory);
+  // otherwise Chrome/Edge round performance.memory and update it rarely, so it shows as "≈".
+  let pageMem = null, pageMemT = 0;
+  const ramLine = () => {
+    const t = performance.now();
+    if (self.crossOriginIsolated && performance.measureUserAgentSpecificMemory && t - pageMemT > 5000) {
+      pageMemT = t; performance.measureUserAgentSpecificMemory().then((m) => { pageMem = m.bytes; }, () => {});
+    }
+    const js = pageMem != null ? `page <b>${MB(pageMem)}</b> MB · `
+      : performance.memory ? `page JS ≈<b>${MB(performance.memory.usedJSHeapSize)}</b> MB · ` : "";
+    return `<br>RAM: ${js}game data <b>${MB(mem.byteLength)}</b> MB · graphics <b>${MB(R.gpuBytes || 0)}</b> MB + screen ~${MB(cv.width * cv.height * 4 * 3)} MB`;
+  };
   const perfEl = $("perf");
   let camX = 0, camY = 0, camH = 900, frameNo = 0, last = performance.now(), hudT = 0, perfT = 0, fpsN = 0, prepMs = 0, drawMs = 0;
 
@@ -1104,7 +1120,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
         const gpu = R.gpuMs >= 0 ? `<b>${R.gpuMs.toFixed(2)} ms</b>` + (R.passMs ? " (" + R.passMs.map((v, i) => `${R.passNames[i]} ${v.toFixed(2)}`).join(" · ") + ")" : "") : R.canTime ? "…" : "n/a";
         const age = lastSnapAt ? Math.round(now - lastSnapAt) : -1;
         perfEl.innerHTML = `<b>${Math.round(fpsN / perfT)}</b> fps · <b>${R.name}</b> · online · CPU/frame: prep <b>${(prepMs / fpsN).toFixed(2)}</b> · draw <b>${(drawMs / fpsN).toFixed(2)}</b> ms` +
-          `<br>GPU ${gpu}<br>${foodHigh} food slots · ${frameOut[1]} snakes drawn · ping <b>${Math.round(rttMs)} ms</b> · smoothing <b>${Math.round(interpT * 1000 / 60)} ms</b> · download <b>${(bytesIn / perfT / 1024).toFixed(1)} KB/s</b> · last update ${age} ms ago`;
+          `<br>GPU ${gpu}<br>${foodHigh} food slots · ${frameOut[1]} snakes drawn · ping <b>${Math.round(rttMs)} ms</b> · smoothing <b>${Math.round(interpT * 1000 / 60)} ms</b> · download <b>${(bytesIn / perfT / 1024).toFixed(1)} KB/s</b> · last update ${age} ms ago` + ramLine();
       }
       perfT = 0; fpsN = 0; prepMs = drawMs = 0; bytesIn = 0;
     }
