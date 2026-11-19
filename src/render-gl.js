@@ -131,14 +131,18 @@ function createGL(canvas, E) {
   const VS = `#version 300 es
   ${FRAME}
   ${PAL}
-  layout(location=0) in ivec2 aP; layout(location=1) in uvec4 aB; // x, y (Q1) | value, skin, born lo, born hi
+  uniform highp usampler2D uFood;                         // pellets: x, y (Q1, as u16) | value | skin<<8 | born (u16)
   out vec2 vL; out float vR; flat out uvec4 vI; flat out vec3 vC;
-  // One instance per pellet, straight from memory. The list holds the pellets of the
-  // cells in view; the rest of the margin is culled here.
+  // ONE plain draw, 6 vertices per pellet (tiny instances run badly, as the floor dots did).
+  // The list holds the pellets of the cells in view; the rest of the margin is culled here.
   void main(){
+    int fi=gl_VertexID/6, k=gl_VertexID-fi*6;
+    uvec4 fw=texelFetch(uFood, ivec2(fi&1023, fi>>10), 0);
+    ivec2 aP=ivec2((int(fw.x)<<16)>>16, (int(fw.y)<<16)>>16);
+    uvec4 aB=uvec4(fw.z&255u, fw.z>>8, fw.w&255u, fw.w>>8);
     vec2 p=vec2(aP)*.5, c0=p-uCamHalf.xy; float r=min(3.5+sqrt(float(aB.x)/16.)*2.6,15.);
     if(aB.x==0u || any(greaterThan(abs(c0),uCamHalf.zw+r*${FOOD_GLOW}+uPxTime.x*1.5))){ gl_Position=vec4(2,2,2,1); return; }
-    vec2 q = vec2(float(gl_VertexID&1), float(gl_VertexID>>1))*2.-1.; // 4 corners: fewest vertices
+    vec2 q = vec2((k==1||k==4||k==5)?1.:-1., (k==2||k==3||k==5)?1.:-1.); // 2 triangles
     bool tiny = r/uPxTime.x < 1.6;                          // pellet under ~1.6 px: no halo
     vec2 l = q*(tiny ? r*.7+uPxTime.x*1.5 : r*${FOOD_GLOW});
     vec2 c = (c0+l)/uCamHalf.zw;
@@ -354,6 +358,7 @@ function createGL(canvas, E) {
   const firstU = gl.getUniformLocation(ringP, "uFirst");
   const plan = {};
   gl.useProgram(ribP); gl.uniform1i(gl.getUniformLocation(ribP, "uTrail"), 0);
+  gl.useProgram(foodP); gl.uniform1i(gl.getUniformLocation(foodP, "uFood"), 3);
   gl.useProgram(lblP);
   gl.uniform1i(gl.getUniformLocation(lblP, "uAtlas"), 2);
   gl.uniform2f(gl.getUniformLocation(lblP, "uSlot"), E.SLOT_W, E.SLOT_H);
@@ -361,7 +366,7 @@ function createGL(canvas, E) {
 
   // ONE buffer per frame mirrors the WASM per-frame block (uniforms + all instance
   // data), double-buffered so the CPU never waits for the GPU. The UBO is a range of it.
-  const A = E.arena, arena = [], foodVao = [], hdrVao = [], miniVao = [];
+  const A = E.arena, arena = [], hdrVao = [], miniVao = [];
   const inst = (loc, n, type, stride, off, int) => {
     gl.enableVertexAttribArray(loc);
     if (int) gl.vertexAttribIPointer(loc, n, type, stride, off); else gl.vertexAttribPointer(loc, n, type, false, stride, off);
@@ -370,13 +375,19 @@ function createGL(canvas, E) {
   for (let i = 0; i < 2; i++) {
     arena[i] = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, arena[i]);
     gl.bufferData(gl.ARRAY_BUFFER, A.size, gl.DYNAMIC_DRAW);
-    foodVao[i] = gl.createVertexArray(); gl.bindVertexArray(foodVao[i]);
-    inst(0, 2, gl.SHORT, 8, A.food, true); inst(1, 4, gl.UNSIGNED_BYTE, 8, A.food + 4, true);
     hdrVao[i] = gl.createVertexArray(); gl.bindVertexArray(hdrVao[i]);
     inst(0, 4, gl.FLOAT, 48, A.hdr); inst(1, 4, gl.FLOAT, 48, A.hdr + 16); inst(2, 4, gl.UNSIGNED_INT, 48, A.hdr + 32, true);
     miniVao[i] = gl.createVertexArray(); gl.bindVertexArray(miniVao[i]);
     inst(0, 3, gl.FLOAT, 16, A.mini); inst(1, 1, gl.UNSIGNED_INT, 16, A.mini + 12, true);
   }
+  // Food: an RGBA16UI texture of 1024 pellets per row (8 bytes each, a byte copy of memory), unit 3
+  const FOOD_ROWS = Math.ceil((A.size - A.food) / 8 / 1024);
+  const foodTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, foodTex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16UI, 1024, FOOD_ROWS);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.activeTexture(gl.TEXTURE0);
+  const foodU16 = new Uint16Array(E.arenaBytes.buffer, E.arenaBytes.byteOffset + A.food, (A.size - A.food) >> 1);
   // Trail: one RG16I texture; rows of on-screen snakes are kept in sync from WASM's upload list.
   const trailTex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, trailTex); // unit 0
@@ -416,7 +427,14 @@ function createGL(canvas, E) {
       mark(); // upload (drivers may run the copies below when the first draw needs them: timed apart)
       // ONE upload: uniforms + snake headers + minimap + used food, from WASM memory
       gl.bindBuffer(gl.ARRAY_BUFFER, arena[f]);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, E.arenaBytes, 0, A.food + nFood * 8);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, E.arenaBytes, 0, A.food);   // uniforms, headers, minimap (food goes to its texture)
+      if (nFood) { // the pellets in use (whole rows, then the part row), unit 3
+        const full = nFood >> 10, rest = nFood & 1023;
+        gl.activeTexture(gl.TEXTURE3);
+        if (full) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, full, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, foodU16, 0);
+        if (rest) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, full, rest, 1, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, foodU16, full * 4096);
+        gl.activeTexture(gl.TEXTURE0);
+      }
       gl.bindBufferRange(gl.UNIFORM_BUFFER, 0, arena[f], 0, 48);
 
       // trail: new points of snakes on screen only (runs listed by WASM), unit 0
@@ -437,7 +455,7 @@ function createGL(canvas, E) {
       if (plan.edge) { gl.uniform1i(firstU, plan.out ? 1 : 2); gl.drawArraysInstanced(gl.TRIANGLES, 0, FLOOR_RING_SEG * 6, 2); } // kinds 1+2 or 2+3
       gl.enable(gl.BLEND);
       mark(); // food
-      if (nFood) { gl.useProgram(foodP); gl.bindVertexArray(foodVao[f]); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nFood); }
+      if (nFood) { gl.useProgram(foodP); gl.bindVertexArray(emptyVao); gl.drawArrays(gl.TRIANGLES, 0, nFood * 6); }
       mark(); // snakes
       if (nVis) { gl.useProgram(ribP); gl.bindVertexArray(hdrVao[f]); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 2 * (maxK + 3), nVis); }
       mark(); // labels (same headers)

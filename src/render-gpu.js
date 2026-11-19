@@ -20,6 +20,9 @@ async function createGPU(canvas, E) {
   const q = device.queue, U = GPUBufferUsage, TU = GPUTextureUsage;
   device.pushErrorScope("validation");
 
+  // food is read as storage from the arena buffer; storage bindings start on 256-byte
+  // boundaries, so bind from the boundary below and skip the rest in the shader
+  const FOOD_AL = E.arena.food & ~255, FOOD_W0 = (E.arena.food - FOOD_AL) >> 2;
   const WGSL = /* wgsl */ `${F16 ? "enable f16;" : ""}
 // colour maths in half precision where the GPU supports it (big win on mobile GPUs)
 alias hf = ${F16 ? "f16" : "f32"}; alias hv3 = vec3<hf>; alias hv4 = vec4<hf>;
@@ -32,6 +35,7 @@ struct Mini { c: vec4f };
 @group(0) @binding(6) var<uniform> M: Mini;
 // skin palette (128 main, then 128 stripe colours): read once per vertex, passed to pixels flat
 @group(0) @binding(7) var<uniform> PAL: array<vec4f, 256>;
+@group(0) @binding(8) var<storage, read> foodW: array<u32>; // pellets, 2 words each: x | y<<16 (Q1), value | skin<<8 | born<<16
 const RM: i32 = ${RING - 1};
 const CR: f32 = 2.38095238;   // 1 / 0.42: circle radius in segment units
 const SP: f32 = 0.42;
@@ -94,15 +98,18 @@ struct HexO { @builtin(position) pos: vec4f, @location(0) @interpolate(flat) col
 // ---------- food ----------
 struct FoodO { @builtin(position) pos: vec4f, @location(0) l: vec2f,
   @location(1) @interpolate(flat) r: f32, @location(2) @interpolate(flat) info: vec4u, @location(3) @interpolate(flat) col: vec3f };
-// One instance per pellet, straight from memory (x, y Q1 | value, skin, born lo, born hi).
+// ONE plain draw, 6 vertices per pellet, read straight from memory (x, y Q1 | value, skin,
+// born lo, born hi): tiny instances run badly on GPUs (as the floor dots did).
 // The list holds the pellets of the cells in view; the rest of the margin is culled here.
-@vertex fn vsFood(@builtin(vertex_index) vi: u32,
-                  @location(0) pq: vec2i, @location(1) b: vec4u) -> FoodO {
+@vertex fn vsFood(@builtin(vertex_index) vi: u32) -> FoodO {
   var o: FoodO;
+  let fi = ${FOOD_W0}u + (vi / 6u) * 2u; let w0 = foodW[fi]; let w1 = foodW[fi + 1u];
+  let pq = vec2i(i32(w0 << 16u) >> 16u, i32(w0) >> 16u);
+  let b = vec4u(w1 & 255u, (w1 >> 8u) & 255u, (w1 >> 16u) & 255u, w1 >> 24u);
   let p = vec2f(pq) * .5; let r = min(3.5 + sqrt(f32(b.x) / 16.) * 2.6, 15.);
   let c0 = p - F.camHalf.xy;
   if (b.x == 0u || any(abs(c0) > F.camHalf.zw + r * ${FOOD_GLOW} + F.pxTime.x * 1.5)) { o.pos = vec4f(2., 2., 2., 1.); return o; }
-  let q = quad(vi) * 2. - 1.;                               // 4 corners: fewest vertices
+  let q = corner(vi % 6u) * 2. - 1.;                       // 2 triangles
   let tiny = r / F.pxTime.x < 1.6;                         // under ~1.6 px: no halo
   let l = q * select(r * ${FOOD_GLOW}, r * .7 + F.pxTime.x * 1.5, tiny);
   let c = (c0 + l) / F.camHalf.zw;
@@ -273,7 +280,7 @@ fn over(a: hv4, b: hv4) -> hv4 { return a + b * (hf(1.) - a.a); }
   // ---- resources ----
   const buf = (size, usage) => device.createBuffer({ size: Math.ceil(size / 4) * 4, usage });
   // ONE buffer mirrors the WASM per-frame block: frame uniforms + all instance data
-  const A = E.arena, arenaBuf = buf(A.size, U.UNIFORM | U.VERTEX | U.COPY_DST);
+  const A = E.arena, arenaBuf = buf(A.size, U.UNIFORM | U.VERTEX | U.STORAGE | U.COPY_DST);
   const miniUBuf = buf(16, U.UNIFORM | U.COPY_DST);
   const palBuf = buf(E.palette.byteLength, U.UNIFORM | U.COPY_DST);
   q.writeBuffer(palBuf, 0, E.palette);
@@ -293,12 +300,14 @@ fn over(a: hv4, b: hv4) -> hv4 { return a + b * (hf(1.) - a.a); }
     { binding: 5, visibility: FR, sampler: {} },
     { binding: 6, visibility: V | FR, buffer: {} },
     { binding: 7, visibility: V, buffer: {} },
+    { binding: 8, visibility: V, buffer: { type: "read-only-storage" } },
   ] });
   const bind = device.createBindGroup({ layout: bgl, entries: [
     { binding: 0, resource: { buffer: arenaBuf, offset: 0, size: 48 } }, { binding: 3, resource: { buffer: trailBuf } },
     { binding: 4, resource: atlasTex.createView() }, { binding: 5, resource: linClamp },
     { binding: 6, resource: { buffer: miniUBuf } },
     { binding: 7, resource: { buffer: palBuf } },
+    { binding: 8, resource: { buffer: arenaBuf, offset: FOOD_AL, size: Math.ceil((A.size - FOOD_AL) / 4) * 4 } },
   ] });
   const layout = device.createPipelineLayout({ bindGroupLayouts: [bgl] });
   const PREMUL = { color: { srcFactor: "one", dstFactor: "one-minus-src-alpha" }, alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha" } };
@@ -308,26 +317,25 @@ fn over(a: hv4, b: hv4) -> hv4 { return a + b * (hf(1.) - a.a); }
     primitive: { topology: strip ? "triangle-strip" : "triangle-list" },
   });
   const inst = (stride, attrs) => [{ arrayStride: stride, stepMode: "instance", attributes: attrs.map(([l, o, f]) => ({ shaderLocation: l, offset: o, format: f })) }];
-  const foodL = inst(8, [[0, 0, "sint16x2"], [1, 4, "uint8x4"]]);
   const hdrL = inst(48, [[0, 0, "float32x4"], [1, 16, "float32x4"], [2, 32, "uint32x4"]]);
   const lblL = inst(48, [[0, 0, "float32x4"], [2, 32, "uint32x4"]]);
   const miniL = inst(16, [[0, 0, "float32x3"], [1, 12, "uint32"]]);
   const P = {
     ring: pipe("vsRing", "fsRing", [], undefined, format, false),
     hex: pipe("vsHex", "fsHex", [], undefined, format, false),
-    food: pipe("vsFood", "fsFood", foodL, PREMUL),
+    food: pipe("vsFood", "fsFood", [], PREMUL, format, false),   // one plain draw, 6 vertices per pellet
     rib: pipe("vsRib", "fsRib", hdrL, PREMUL),
     lbl: pipe("vsLbl", "fsLbl", lblL, PREMUL),
     mini: pipe("vsMini", "fsMini", miniL, PREMUL),
   };
 
   // ---- the five draws: [pipeline, vertex-data offset in the arena] ----
-  const DRAWS = [[null, -1], [P.food, A.food], [P.rib, A.hdr], [P.lbl, A.hdr], [P.mini, A.mini]]; // 0: the floor (its own draws, in encodeDirect)
+  const DRAWS = [[null, -1], [P.food, -1], [P.rib, A.hdr], [P.lbl, A.hdr], [P.mini, A.mini]]; // 0: the floor (its own draws, in encodeDirect)
   // reused every frame: no per-frame allocations
   const counts = new Uint32Array([0, 0, 4, 0, 0, 0, 4, 0, 4, 0]); // (vertices, instances): floor (unused), food, snakes, labels, minimap
   const mainAtt = { view: null, loadOp: "clear", storeOp: "store", clearValue: [0, 0, 0, 1] }; // clearValue: the floor colour (plan.clear)
   const mainDesc = { colorAttachments: [mainAtt] };
-  const setCounts = (food, maxK, nVis, nMini) => { counts[3] = food; counts[4] = 2 * (maxK + 3); counts[5] = nVis; counts[7] = nVis; counts[9] = nMini; };
+  const setCounts = (food, maxK, nVis, nMini) => { counts[2] = food * 6; counts[3] = food ? 1 : 0; counts[4] = 2 * (maxK + 3); counts[5] = nVis; counts[7] = nVis; counts[9] = nMini; };
   const encodeDirect = (pass, i) => {
     if (i === 0) { // floor: the pass cleared (nearly free); flat inside area when outside; hex lines; edge band + darkness
       pass.setPipeline(P.ring);
