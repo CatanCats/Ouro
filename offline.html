@@ -104,6 +104,7 @@
   #board.sized { min-width: 0; }
   /* × folds it to the title bar */
   #board.closed { min-width: 0; padding-bottom: 10px; }
+  #board:not(.closed) { padding-bottom: 2px; } /* the list runs to the bottom edge (the resize corner sits on top of it): no empty strip under the names */
   #board.closed #lb, #board.closed .lbE, #board.closed #lbGrip { display: none; }
   #board.closed h3 { margin-bottom: 0; }
   #board.closed.sized { width: auto !important; }
