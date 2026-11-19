@@ -13,7 +13,7 @@ Read this first. It sums up the project and where it stands so you don't have to
   - `sim.c` → WebAssembly (the whole simulation),
   - `app.js` (UI and main loop),
   - `render-gpu.js` (WebGPU) and `render-gl.js` (WebGL 2).
-- `index.html`: the **online** front page (on GitHub Pages it connects to the br8t.com server), built from `online/client/` (`client.js`, `online.html`) plus the same two renderers. It connects to the game server. With no server configured it shows no message and PLAY stays disabled; the "Play offline instead" link goes to `offline.html`.
+- `index.html`: the **online** front page (on GitHub Pages it opens offline.html instead), built from `online/client/` (`client.js`, `online.html`) plus the same two renderers. It connects to the game server. With no server configured it shows no message and PLAY stays disabled; the "Play offline instead" link goes to `offline.html`.
 - `online/server/`: the game server, in Rust (tokio + axum WebSockets). `sim-server.c` is a copy of `src/sim.c` with the same rules, extended for many human players, and compiled natively by `build.rs`.
   - Protocol: documented at the top of `src/main.rs`, and mirrored in `online/client/client.js`.
 - `online/deploy/`: a systemd unit (`serpent.service`) and a Caddy config (HTTPS).
@@ -30,7 +30,7 @@ Server environment variables: `PORT` (8080), `BOTS` (60), `WEB_ROOT`, `MAX_PER_I
 
 ## The server is live
 The online game is live at **https://br8t.com/ouro/** (deployed 30 Sep 2026). The server's address and SSH key are not in the repo; the owner supplies them.
-- Pages: https://br8t.com/ouro/ (online) and https://br8t.com/ouro/offline.html. The GitHub Pages copy is at https://catancats.github.io/Ouro/ (repo renamed Ouro; links updated 19 Nov 2026). Its online page (`index.html`) no longer redirects (19 Nov 2026, owner's request): on `github.io` it stays and connects to `wss://br8t.com/ouro/ws` (the live server; no Origin check there), so the GitHub copy is always the newest page. `offline.html` must **never** redirect.
+- Pages: https://br8t.com/ouro/ (online) and https://br8t.com/ouro/offline.html. The GitHub Pages copy is at https://catancats.github.io/Ouro/ (repo renamed Ouro; links updated 19 Nov 2026). The GitHub copy is the **offline** game (19 Nov 2026, owner's request): its `index.html` redirects to `offline.html` next to it (script in the head, `github.io` only), and the offline page's "Play online with others" link points to br8t.com/ouro/ there (`#toOnline`). (`client.js` would connect a github.io copy to `wss://br8t.com/ouro/ws` if the redirect were removed.) `offline.html` must **never** redirect.
 - Search info: titles, descriptions, canonical links (the br8t.com copies) and JSON-LD are in the heads of `online/client/online.html` and `src/index.html`. br8t.com has a `robots.txt` and `sitemap.xml` (in the br8t.com home site, not this repo) listing both game pages.
 - The page connects to `ws` next to itself (`wss://br8t.com/ouro/ws`); at a site root that is still `/ws`.
 - On the server (Debian 12, 1 CPU AMD EPYC Milan, 845 MB RAM, shared with other sites):
