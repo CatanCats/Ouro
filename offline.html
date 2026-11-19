@@ -231,7 +231,7 @@
     </div>
     <div class="rsw" id="rsw" role="group" aria-label="Renderer">
       <span>Renderer</span>
-      <button data-r="auto">Auto</button><button data-r="webgpu">WebGPU</button><button data-r="webgl">WebGL</button>
+      <button data-r="auto">Auto</button><button data-r="webgpu">WebGPU</button><button data-r="webgl">WebGL</button><button data-r="webgl-nofill" title="Test: WebGL without the screen fill (the browser wipes the picture to black itself)">WebGL no fill</button>
     </div>
     <div class="tech"><span id="tech"></span> · now: <span id="rnow">…</span></div>
     <div class="slow" id="slowNote" hidden></div>
@@ -669,7 +669,7 @@ function createGL(canvas, E) {
   const R = {
     // graphics memory the game itself made: 2 arenas, trail, food and label textures, palette
     gpuBytes: 2 * A.size + RING * NS * 4 + 1024 * FOOD_ROWS * 8 + E.AW * E.AH * 4 + E.palette.byteLength,
-    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
+    name: E.noFill ? "WebGL 2 (no fill)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
@@ -706,7 +706,9 @@ function createGL(canvas, E) {
 
       mark(); // clear (nearly free on most GPUs: whole blocks marked as one colour)
       floorPlan(E.frameBlk, plan);
-      gl.clearColor(plan.clear[0], plan.clear[1], plan.clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      // test (E.noFill): no fill of our own; after each shown frame the browser wipes the picture
+      // to black (preserveDrawingBuffer is false), so the floor is black and nothing smears
+      if (!E.noFill) { gl.clearColor(plan.clear[0], plan.clear[1], plan.clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT); }
       mark(); // floor: flat inside area when outside; dots; edge band + darkness (see FLOOR_RIM)
       gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
       gl.useProgram(ringP);
@@ -1306,8 +1308,11 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
      switches silently. ?renderer=webgl (or the menu) picks WebGL directly. */
   const canvas = $("gl");
   const saved = store.get("serpent.renderer") || "auto";
-  // "webgl-alpha" was a test setting (19 Nov 2026, no gain): it means plain WebGL now
-  const want = (new URLSearchParams(location.search).get("renderer") || saved).replace("webgl-alpha", "webgl");
+  // "webgl-alpha" was a test setting (19 Nov 2026, no gain): it means plain WebGL now.
+  // "webgl-nofill" (test): WebGL without its own screen fill (render-gl.js, E.noFill)
+  const wantRaw = (new URLSearchParams(location.search).get("renderer") || saved).replace("webgl-alpha", "webgl");
+  E.noFill = wantRaw === "webgl-nofill";
+  const want = E.noFill ? "webgl" : wantRaw;
   // Is this browser running the site with its JavaScript/WebAssembly optimizer off
   // (Edge "Enhance your security on the web", Chrome "V8 optimizer" blocked)? That
   // mode also turns WebGPU off and makes the game ~30x slower. A tight loop tells:
