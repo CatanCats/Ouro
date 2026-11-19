@@ -32,14 +32,14 @@ typedef unsigned char u8;
 #define EXPORT(n) __attribute__((export_name(n)))
 #define PI 3.14159265f
 #define TAU 6.28318531f
-#define MAXS 128         /* snakes (slot 0 = player) */
+#define MAXS 64          /* snakes (slot 0 = player) */
 #define RING 512         /* trail ring per snake (power of two) */
 #define RMASK (RING - 1)
 #define MAXSEG (RING - 1)
 #define MAXF 8192        /* food pellets */
-#define WR 16000.f        /* world radius */
+#define WR 8000.f         /* world radius (back to the old size, 19 Nov 2026, as online) */
 #define CELL 100.f       /* spatial hash cell size (>= max query radius) */
-#define GN 320           /* grid cells per side: 2*WR/CELL */
+#define GN 160           /* grid cells per side: 2*WR/CELL */
 #define GC (GN * GN)
 #define MC 32.f          /* owner-map cell */
 #define MN 320           /* owner-map window (cells per side), follows the player */

@@ -39,7 +39,7 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const bin = Uint8Array.from(atob(WASM_BASE64), (c) => c.charCodeAt(0));
   const { instance } = await WebAssembly.instantiate(bin, { env: { now: () => performance.now() } });
   const W = instance.exports;
-  const BOTS = 100;
+  const BOTS = 60;
   W.init((Math.random() * 4294967295) >>> 0, BOTS);
   const WR = W.worldRadius();
 
