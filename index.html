@@ -4,7 +4,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#070a12">
 <!-- the online game lives at br8t.com/ouro: send visitors of the GitHub Pages copy there (offline.html stays) -->
-<script>if (location.hostname.endsWith("github.io")) location.replace("https://br8t.com/ouro/" + location.search + location.hash);</script>
 <title>Ouro – play now: free open-source slither.io-style snake game</title>
 <meta name="description" content="Play Ouro now at br8t.com/ouro: a free, open-source slither.io-style snake game in your browser. Play online with other people and 60 AI snakes in five difficulty tiers. Super efficient: WebAssembly and WebGPU, runs smoothly even on old laptops and phones. No download, no sign-up.">
 <meta name="keywords" content="snake game, slither.io, slither io, slither.io clone, slither io unblocked, open source slither.io, io game, multiplayer snake, browser game, html5 game, free online game, snake io, webgpu game, webassembly game, lightweight game">
@@ -1668,7 +1667,8 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const DEFAULT_SERVER = "__SERVER_URL__";
   const serverURL = params.get("server") ||
     (/^https?:$/.test(location.protocol) && !location.hostname.endsWith("github.io") ? (location.protocol === "https:" ? "wss://" : "ws://") + location.host + location.pathname.replace(/[^/]*$/, "") + "ws"
-      : DEFAULT_SERVER.startsWith("__") ? "" : DEFAULT_SERVER);
+      : !DEFAULT_SERVER.startsWith("__") ? DEFAULT_SERVER
+      : location.hostname.endsWith("github.io") ? "wss://br8t.com/ouro/ws" : ""); // the GitHub copy: newest page, live server (no redirect)
   let ws = null, connected = false, retry = 0;
   const statusEl = $("net");
   function setStatus(txt, cls) { statusEl.textContent = txt; statusEl.className = "net " + (cls || ""); }

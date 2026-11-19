@@ -385,7 +385,8 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
   const DEFAULT_SERVER = "__SERVER_URL__";
   const serverURL = params.get("server") ||
     (/^https?:$/.test(location.protocol) && !location.hostname.endsWith("github.io") ? (location.protocol === "https:" ? "wss://" : "ws://") + location.host + location.pathname.replace(/[^/]*$/, "") + "ws"
-      : DEFAULT_SERVER.startsWith("__") ? "" : DEFAULT_SERVER);
+      : !DEFAULT_SERVER.startsWith("__") ? DEFAULT_SERVER
+      : location.hostname.endsWith("github.io") ? "wss://br8t.com/ouro/ws" : ""); // the GitHub copy: newest page, live server (no redirect)
   let ws = null, connected = false, retry = 0;
   const statusEl = $("net");
   function setStatus(txt, cls) { statusEl.textContent = txt; statusEl.className = "net " + (cls || ""); }
