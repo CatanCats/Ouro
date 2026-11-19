@@ -37,11 +37,11 @@ function floorPlan(fb, p) {
 }
 
 function createGL(canvas, E) {
-  // ?glalpha=1 (test): an alpha canvas. With alpha: false, Chrome keeps the alpha channel at 1
+  // ?renderer=webgl-alpha (test; also ?glalpha=1): an alpha canvas. With alpha: false, Chrome keeps the alpha channel at 1
   // with a colour mask, and ANGLE (Direct3D on Windows) may then clear by DRAWING a full-screen
   // quad instead of a fast clear (owner's Intel iGPU: clear 1.12 ms). Every pixel we draw has
   // alpha 1 anyway (opaque floor, premultiplied blending keeps 1), so the picture is the same.
-  const glAlpha = new URLSearchParams(location.search).get("glalpha") === "1";
+  const glAlpha = !!E.glAlpha || new URLSearchParams(location.search).get("glalpha") === "1"; // ?renderer=webgl-alpha
   const gl = canvas.getContext("webgl2", { antialias: false, alpha: glAlpha, depth: false, stencil: false,
     premultipliedAlpha: true, powerPreference: "high-performance" });
   if (!gl) return null;
