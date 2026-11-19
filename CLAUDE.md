@@ -30,7 +30,7 @@ Server environment variables: `PORT` (8080), `BOTS` (60), `WEB_ROOT`, `MAX_PER_I
 
 ## The server is live
 The online game is live at **https://br8t.com/ouro/** (deployed 30 Sep 2026). The server's address and SSH key are not in the repo; the owner supplies them.
-- Pages: https://br8t.com/ouro/ (online) and https://br8t.com/ouro/offline.html. The GitHub Pages copy is now at https://catancats.github.io/Serpent.io/ (the old `/Snake-Game/` address is gone since the repo was renamed). Its online page (`index.html`) redirects to br8t.com/ouro/ with a script in the head that only runs on `github.io`; `offline.html` must **never** redirect.
+- Pages: https://br8t.com/ouro/ (online) and https://br8t.com/ouro/offline.html. The GitHub Pages copy is at https://catancats.github.io/Ouro/ (repo renamed Ouro; links updated 19 Nov 2026). Its online page (`index.html`) redirects to br8t.com/ouro/ with a script in the head that only runs on `github.io`; `offline.html` must **never** redirect.
 - Search info: titles, descriptions, canonical links (the br8t.com copies) and JSON-LD are in the heads of `online/client/online.html` and `src/index.html`. br8t.com has a `robots.txt` and `sitemap.xml` (in the br8t.com home site, not this repo) listing both game pages.
 - The page connects to `ws` next to itself (`wss://br8t.com/ouro/ws`); at a site root that is still `/ws`.
 - On the server (Debian 12, 1 CPU AMD EPYC Milan, 845 MB RAM, shared with other sites):
