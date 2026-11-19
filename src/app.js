@@ -75,11 +75,8 @@ const BOT_NAMES = ["Noodle", "Slinky", "Viper", "Kaa", "Mamba", "Wiggles", "Nagi
      switches silently. ?renderer=webgl (or the menu) picks WebGL directly. */
   const canvas = $("gl");
   const saved = store.get("serpent.renderer") || "auto";
-  // "webgl-alpha" was a test setting (19 Nov 2026, no gain): it means plain WebGL now.
-  // "webgl-nofill" (test): WebGL without its own screen fill (render-gl.js, E.noFill)
-  const wantRaw = (new URLSearchParams(location.search).get("renderer") || saved).replace("webgl-alpha", "webgl");
-  E.noFill = wantRaw === "webgl-nofill";
-  const want = E.noFill ? "webgl" : wantRaw;
+  // "webgl-alpha" and "webgl-nofill" were test settings (19 Nov 2026, no gain): plain WebGL now
+  const want = (new URLSearchParams(location.search).get("renderer") || saved).replace(/^webgl-(alpha|nofill)$/, "webgl");
   // Is this browser running the site with its JavaScript/WebAssembly optimizer off
   // (Edge "Enhance your security on the web", Chrome "V8 optimizer" blocked)? That
   // mode also turns WebGPU off and makes the game ~30x slower. A tight loop tells:

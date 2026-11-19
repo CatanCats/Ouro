@@ -411,7 +411,7 @@ function createGL(canvas, E) {
   const R = {
     // graphics memory the game itself made: 2 arenas, trail, food and label textures, palette
     gpuBytes: 2 * A.size + RING * NS * 4 + 1024 * FOOD_ROWS * 8 + E.AW * E.AH * 4 + E.palette.byteLength,
-    name: E.noFill ? "WebGL 2 (no fill)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
+    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
@@ -448,9 +448,7 @@ function createGL(canvas, E) {
 
       mark(); // clear (nearly free on most GPUs: whole blocks marked as one colour)
       floorPlan(E.frameBlk, plan);
-      // test (E.noFill): no fill of our own; after each shown frame the browser wipes the picture
-      // to black (preserveDrawingBuffer is false), so the floor is black and nothing smears
-      if (!E.noFill) { gl.clearColor(plan.clear[0], plan.clear[1], plan.clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+      gl.clearColor(plan.clear[0], plan.clear[1], plan.clear[2], 1); gl.clear(gl.COLOR_BUFFER_BIT);
       mark(); // floor: flat inside area when outside; dots; edge band + darkness (see FLOOR_RIM)
       gl.disable(gl.BLEND); gl.bindVertexArray(emptyVao);
       gl.useProgram(ringP);
