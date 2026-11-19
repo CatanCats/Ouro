@@ -295,8 +295,13 @@ function floorPlan(fb, p) {
 }
 
 function createGL(canvas, E) {
+  // Low-latency canvas (desynchronized): on Windows the normal WebGL image is shared with the
+  // browser's compositor, and Intel GPUs can't fast-clear or compress shared images, so the
+  // clear wrote every pixel (owner's laptop: clear ~1 ms, floor and map slower than WebGPU).
+  // A desynchronized canvas is presented through its own swap chain instead. ?lowlatency=0: off.
+  const lowLat = new URLSearchParams(location.search).get("lowlatency") !== "0";
   const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, depth: false, stencil: false,
-    premultipliedAlpha: true, powerPreference: "high-performance" });
+    premultipliedAlpha: true, powerPreference: "high-performance", desynchronized: lowLat });
   if (!gl) return null;
   const { NS, RING } = E;
   // Skin palette in a uniform buffer, looked up once per VERTEX and handed to the pixels
@@ -669,7 +674,7 @@ function createGL(canvas, E) {
   const R = {
     // graphics memory the game itself made: 2 arenas, trail, food and label textures, palette
     gpuBytes: 2 * A.size + RING * NS * 4 + 1024 * FOOD_ROWS * 8 + E.AW * E.AH * 4 + E.palette.byteLength,
-    name: "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "clear again", "floor", "food", "snakes", "labels", "map"],
+    name: gl.getContextAttributes().desynchronized ? "WebGL 2 (low latency)" : "WebGL 2", gpuMs: -1, passMs: null, canTime: !!tq, passNames: ["upload", "clear", "clear again", "floor", "food", "snakes", "labels", "map"],
     resize(w, h) { vw = w; vh = h; },
     placeMini(cx, cy, r) { gl.useProgram(miniP); gl.uniform3f(miniU, cx, cy, r); gl.uniform2f(miniRes, vw, vh); },
     labelSlot(src, x, y) {
