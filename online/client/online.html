@@ -102,6 +102,7 @@
   .lbE[data-rs="w"] { left: -5px; top: 34px; bottom: 16px; width: 12px; cursor: ew-resize; }
   .lbE[data-rs="s"] { bottom: -5px; left: 16px; right: 10px; height: 12px; cursor: ns-resize; }
   #board ol { overflow: hidden; }
+  #board ol.cut { -webkit-mask-image: linear-gradient(#000 calc(100% - 12px), transparent); mask-image: linear-gradient(#000 calc(100% - 12px), transparent); } /* a name cut by the bottom edge fades out */
   #board:not(.closed) { padding-bottom: 2px; } /* the list runs to the bottom edge (the resize corner sits on top of it): no empty strip under the names */
   #board.sized li .nm { overflow: hidden; text-overflow: ellipsis; } /* made narrower by hand: long names end in … */
   #board.sized { min-width: 0; }
